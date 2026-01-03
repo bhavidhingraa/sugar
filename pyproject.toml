@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sugarai"
-version = "3.1.2"
+version = "3.2.0"
 description = "Sugar 🍰 - A dev team that never stops. Delegate full tasks to AI in the background."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -58,6 +58,11 @@ test = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0"
+]
+mcp = [
+    "mcp>=1.0.0",
+    "starlette>=0.27.0",
+    "uvicorn>=0.22.0",
 ]
 
 [project.scripts]
