@@ -646,17 +646,21 @@ class TestIntegration:
     async def test_full_workflow_single_subagent(self, subagent_manager):
         """Test complete workflow for spawning a single sub-agent."""
 
+        async def mock_execute(*args, **kwargs):
+            # Add small delay to ensure measurable execution time on Windows
+            # (Windows datetime has ~15ms resolution)
+            await asyncio.sleep(0.02)
+            return AgentResponse(
+                success=True,
+                content="Successfully refactored the authentication module.",
+                tool_uses=[{"tool": "Edit", "input": {"file_path": "/auth.py"}}],
+                files_modified=["/auth.py"],
+                execution_time=5.0,
+            )
+
         with patch("sugar.agent.subagent_manager.SugarAgent") as MockAgent:
             mock_instance = MockAgent.return_value
-            mock_instance.execute = AsyncMock(
-                return_value=AgentResponse(
-                    success=True,
-                    content="Successfully refactored the authentication module.",
-                    tool_uses=[{"tool": "Edit", "input": {"file_path": "/auth.py"}}],
-                    files_modified=["/auth.py"],
-                    execution_time=5.0,
-                )
-            )
+            mock_instance.execute = mock_execute
 
             result = await subagent_manager.spawn(
                 task_id="refactor-auth",
