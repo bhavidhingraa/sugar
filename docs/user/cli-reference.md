@@ -95,6 +95,53 @@ sugar add TITLE [OPTIONS]
 - `--stdin` - Read task data from stdin (JSON format)
 - `--json` - Parse description as JSON and store in context
 
+**Ralph Wiggum Options (Iterative Execution):**
+- `--ralph` - Enable iterative execution for complex tasks that benefit from self-correction
+- `--completion-promise TEXT` - Custom completion signal (default: DONE). Requires `--ralph`
+- `--max-iterations INTEGER` - Maximum iterations before auto-stopping (default: 10)
+
+Ralph mode runs tasks iteratively until completion criteria are met. Each iteration, Claude sees previous work and continues improving. Ideal for:
+- Complex debugging requiring multiple attempts
+- TDD workflows (write tests, implement, refine)
+- Exploratory refactoring
+- Tasks with clear success criteria (tests pass, linting clean)
+
+**Intelligent Triage Options:**
+- `--triage` - Enable intelligent triage to auto-detect execution mode and completion criteria
+
+Triage mode analyzes task complexity and codebase capabilities to:
+- Automatically recommend Ralph mode for complex tasks
+- Generate appropriate completion criteria based on task type
+- Detect available test frameworks, linters, and quality gates
+- Enrich task context with triage analysis
+
+When `--triage` is enabled and Ralph mode is recommended with high confidence (60%+), it will be automatically enabled.
+
+**Triage Examples:**
+```bash
+# Let Sugar decide if Ralph mode is needed
+sugar add "Fix authentication bug" --type bug_fix --triage
+
+# Triage for a complex refactor (likely to recommend Ralph)
+sugar add "Refactor to use repository pattern" --type refactor --triage \
+  --description "Update data access layer. All tests must pass."
+```
+
+**Ralph Examples:**
+```bash
+# Simple iterative bug fix
+sugar add "Fix auth timeout" --type bug_fix --ralph
+
+# With custom completion signal
+sugar add "Implement rate limiting" --type feature --ralph \
+  --completion-promise "RATE LIMITING COMPLETE"
+
+# With higher iteration limit for complex refactoring
+sugar add "Refactor database layer" --type refactor --ralph \
+  --max-iterations 20 \
+  --description "Refactor to repository pattern. Output <promise>REFACTOR DONE</promise> when tests pass."
+```
+
 **Standard Examples:**
 ```bash
 # Basic task

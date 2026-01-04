@@ -318,6 +318,17 @@ def init(project_dir):
     default=None,
     help="Max iterations for Ralph mode (default: 10)",
 )
+@click.option(
+    "--completion-promise",
+    type=str,
+    default=None,
+    help="Completion signal for Ralph mode (only with --ralph)",
+)
+@click.option(
+    "--triage",
+    is_flag=True,
+    help="Enable intelligent triage (auto-detect Ralph mode and completion criteria)",
+)
 @click.pass_context
 def add(
     ctx,
@@ -334,6 +345,8 @@ def add(
     skip_stages,
     ralph,
     max_iterations,
+    completion_promise,
+    triage,
 ):
     """Add a new task to Sugar work queue
 
@@ -343,6 +356,14 @@ def add(
     - Stdin input (--stdin with JSON data)
     - JSON description parsing (--json with --description containing JSON)
     """
+
+    # Validate that --completion-promise is only used with --ralph
+    if completion_promise and not ralph:
+        click.echo(
+            "❌ Error: --completion-promise can only be used with --ralph",
+            err=True,
+        )
+        raise click.Abort()
 
     if urgent:
         priority = 5
@@ -428,18 +449,27 @@ def add(
         if ralph:
             task_data["context"]["ralph_enabled"] = True
             task_data["context"]["max_iterations"] = max_iterations or 10
-            # Validate completion criteria if strict mode
+
+            # Store completion promise if provided
+            if completion_promise:
+                task_data["context"]["completion_promise"] = completion_promise
+
+            # Validate completion criteria in strict mode
             from .ralph import CompletionCriteriaValidator
 
-            validator = CompletionCriteriaValidator(strict=False)
+            validator = CompletionCriteriaValidator(strict=True)
             result = validator.validate(
                 description, {"max_iterations": max_iterations or 10}
             )
             if not result.is_valid:
                 click.echo(
-                    f"⚠️  Ralph enabled but completion criteria may be weak: {', '.join(result.suggestions[:2])}",
+                    f"❌ Ralph validation failed: {result.errors[0] if result.errors else 'No completion criteria'}",
                     err=True,
                 )
+                click.echo("", err=True)
+                for suggestion in result.suggestions[:2]:
+                    click.echo(f"  💡 {suggestion}", err=True)
+                raise click.Abort()
 
         # Override/merge with complex input data
         if task_data_override:
@@ -454,6 +484,36 @@ def add(
             # Ensure required fields are still present
             if "id" not in task_data or not task_data["id"]:
                 task_data["id"] = str(uuid.uuid4())
+
+        # Perform intelligent triage if enabled
+        triage_info = ""
+        if triage and not ralph:  # Triage recommends Ralph mode if needed
+            from .triage import TaskTriageAnalyzer
+
+            async def do_triage():
+                analyzer = TaskTriageAnalyzer(root_path=".")
+                result = await analyzer.triage(task_data)
+                return result
+
+            triage_result = asyncio.run(do_triage())
+
+            # Apply triage recommendations to task context
+            task_data["context"]["triage"] = triage_result.context_enrichments.get(
+                "triage", {}
+            )
+
+            # Auto-enable Ralph mode if recommended with high confidence
+            if triage_result.use_ralph_mode and triage_result.confidence >= 0.6:
+                task_data["context"]["ralph_enabled"] = True
+                task_data["context"][
+                    "completion_promise"
+                ] = triage_result.completion_promise
+                task_data["context"]["max_iterations"] = triage_result.max_iterations
+                triage_info = f" [Triage: Ralph recommended, confidence {triage_result.confidence:.0%}]"
+            else:
+                triage_info = (
+                    f" [Triage: single-pass, confidence {triage_result.confidence:.0%}]"
+                )
 
         # Add to queue
         asyncio.run(_add_task_async(work_queue, task_data))
@@ -477,7 +537,7 @@ def add(
             ralph_mode = f" [Ralph: max {max_iter} iterations]"
 
         click.echo(
-            f"✅ Added {task_data.get('type', task_type)} task: '{task_data.get('title', title)}' ({urgency}){input_method}{ralph_mode}"
+            f"✅ Added {task_data.get('type', task_type)} task: '{task_data.get('title', title)}' ({urgency}){input_method}{ralph_mode}{triage_info}"
         )
 
     except Exception as e:
