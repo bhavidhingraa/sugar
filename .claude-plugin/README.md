@@ -1,8 +1,8 @@
 # Sugar 🍰 - Claude Code Plugin
 
-A dev team that never stops.
+Vibe coding while you sleep.
 
-Delegate full tasks to AI in the background with autonomous development capabilities.
+Autonomous AI development for Claude Code with background task execution.
 
 ## What is Sugar?
 

@@ -1,8 +1,8 @@
 # Sugar 🍰
 
-A dev team that never stops.
+Vibe coding while you sleep.
 
-Delegate full tasks to AI in the background. Sugar builds features, fixes bugs, and ships code while you focus on what matters.
+Autonomous AI development for Claude Code. Sugar builds features, fixes bugs, and ships code while you focus on what matters.
 
 ## What It Does
 
