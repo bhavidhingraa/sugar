@@ -45,6 +45,7 @@ class TaskTypeManager:
                         commit_template TEXT,
                         emoji TEXT,
                         file_patterns TEXT DEFAULT '[]',
+                        default_acceptance_criteria TEXT DEFAULT '[]',
                         is_default INTEGER DEFAULT 0,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -75,11 +76,33 @@ class TaskTypeManager:
 
                 await db.commit()
                 logger.info("Created task_types table and populated with default types")
+            else:
+                # Migrate existing table to add default_acceptance_criteria column
+                await self._migrate_acceptance_criteria_column(db)
 
         self._initialized = True
 
+    async def _migrate_acceptance_criteria_column(self, db):
+        """Add default_acceptance_criteria column to existing task_types table"""
+        try:
+            cursor = await db.execute("PRAGMA table_info(task_types)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            if "default_acceptance_criteria" not in column_names:
+                await db.execute(
+                    "ALTER TABLE task_types ADD COLUMN default_acceptance_criteria TEXT DEFAULT '[]'"
+                )
+                await db.commit()
+                logger.info("Added default_acceptance_criteria column to task_types table")
+        except Exception as e:
+            logger.warning(f"Migration warning for default_acceptance_criteria: {e}")
+
     def _get_default_task_types(self) -> List[Dict]:
         """Get the default task types"""
+        # Import default criteria templates
+        from ..quality_gates.criteria_templates import CriteriaTemplates
+
         return [
             {
                 "id": "feature",
@@ -89,6 +112,7 @@ class TaskTypeManager:
                 "commit_template": "feat: {title}",
                 "emoji": "✨",
                 "file_patterns": [],
+                "default_acceptance_criteria": CriteriaTemplates.FEATURE,
             },
             {
                 "id": "bug_fix",
@@ -98,6 +122,7 @@ class TaskTypeManager:
                 "commit_template": "fix: {title}",
                 "emoji": "🐛",
                 "file_patterns": [],
+                "default_acceptance_criteria": CriteriaTemplates.BUG_FIX,
             },
             {
                 "id": "refactor",
@@ -107,6 +132,7 @@ class TaskTypeManager:
                 "commit_template": "refactor: {title}",
                 "emoji": "♻️",
                 "file_patterns": [],
+                "default_acceptance_criteria": CriteriaTemplates.REFACTOR,
             },
             {
                 "id": "docs",
@@ -116,6 +142,7 @@ class TaskTypeManager:
                 "commit_template": "docs: {title}",
                 "emoji": "📝",
                 "file_patterns": ["*.md", "docs/**"],
+                "default_acceptance_criteria": CriteriaTemplates.DOCUMENTATION,
             },
             {
                 "id": "test",
@@ -125,6 +152,7 @@ class TaskTypeManager:
                 "commit_template": "test: {title}",
                 "emoji": "🧪",
                 "file_patterns": ["test_*.py", "*_test.py", "tests/**"],
+                "default_acceptance_criteria": CriteriaTemplates.TEST,
             },
             {
                 "id": "chore",
@@ -134,6 +162,7 @@ class TaskTypeManager:
                 "commit_template": "chore: {title}",
                 "emoji": "🔧",
                 "file_patterns": [],
+                "default_acceptance_criteria": CriteriaTemplates.CHORE,
             },
             {
                 "id": "style",
@@ -143,6 +172,7 @@ class TaskTypeManager:
                 "commit_template": "style: {title}",
                 "emoji": "💄",
                 "file_patterns": [],
+                "default_acceptance_criteria": CriteriaTemplates.STYLE,
             },
             {
                 "id": "perf",
@@ -152,6 +182,7 @@ class TaskTypeManager:
                 "commit_template": "perf: {title}",
                 "emoji": "⚡",
                 "file_patterns": [],
+                "default_acceptance_criteria": CriteriaTemplates.PERFORMANCE,
             },
             {
                 "id": "ci",
@@ -161,6 +192,7 @@ class TaskTypeManager:
                 "commit_template": "ci: {title}",
                 "emoji": "👷",
                 "file_patterns": [".github/**", "Dockerfile", "docker-compose*.yml"],
+                "default_acceptance_criteria": CriteriaTemplates.CI_CD,
             },
             {
                 "id": "security",
@@ -170,6 +202,7 @@ class TaskTypeManager:
                 "commit_template": "security: {title}",
                 "emoji": "🔒",
                 "file_patterns": [],
+                "default_acceptance_criteria": CriteriaTemplates.SECURITY,
             },
         ]
 
@@ -205,6 +238,16 @@ class TaskTypeManager:
                         task_type["file_patterns"] = []
                 else:
                     task_type["file_patterns"] = []
+                # Parse JSON default_acceptance_criteria
+                if task_type.get("default_acceptance_criteria"):
+                    try:
+                        task_type["default_acceptance_criteria"] = json.loads(
+                            task_type["default_acceptance_criteria"]
+                        )
+                    except json.JSONDecodeError:
+                        task_type["default_acceptance_criteria"] = []
+                else:
+                    task_type["default_acceptance_criteria"] = []
                 result.append(task_type)
 
             return result
@@ -240,6 +283,16 @@ class TaskTypeManager:
                         task_type["file_patterns"] = []
                 else:
                     task_type["file_patterns"] = []
+                # Parse JSON default_acceptance_criteria
+                if task_type.get("default_acceptance_criteria"):
+                    try:
+                        task_type["default_acceptance_criteria"] = json.loads(
+                            task_type["default_acceptance_criteria"]
+                        )
+                    except json.JSONDecodeError:
+                        task_type["default_acceptance_criteria"] = []
+                else:
+                    task_type["default_acceptance_criteria"] = []
                 return task_type
 
             return None
@@ -271,6 +324,7 @@ class TaskTypeManager:
         commit_template: str = None,
         emoji: str = None,
         file_patterns: List[str] = None,
+        default_acceptance_criteria: List[Dict] = None,
     ) -> bool:
         """Add a new task type"""
         await self.initialize()
@@ -280,13 +334,17 @@ class TaskTypeManager:
         if file_patterns is None:
             file_patterns = []
 
+        if default_acceptance_criteria is None:
+            default_acceptance_criteria = []
+
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(
                     """
                     INSERT INTO task_types
-                    (id, name, description, agent, commit_template, emoji, file_patterns, is_default)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                    (id, name, description, agent, commit_template, emoji, file_patterns,
+                     default_acceptance_criteria, is_default)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """,
                     (
                         type_id,
@@ -296,6 +354,7 @@ class TaskTypeManager:
                         commit_template,
                         emoji,
                         json.dumps(file_patterns),
+                        json.dumps(default_acceptance_criteria),
                     ),
                 )
                 await db.commit()
@@ -317,6 +376,7 @@ class TaskTypeManager:
         commit_template: str = None,
         emoji: str = None,
         file_patterns: List[str] = None,
+        default_acceptance_criteria: List[Dict] = None,
     ) -> bool:
         """Update an existing task type"""
         await self.initialize()
@@ -347,6 +407,9 @@ class TaskTypeManager:
         if file_patterns is not None:
             updates.append("file_patterns = ?")
             params.append(json.dumps(file_patterns))
+        if default_acceptance_criteria is not None:
+            updates.append("default_acceptance_criteria = ?")
+            params.append(json.dumps(default_acceptance_criteria))
 
         if not updates:
             logger.warning(f"No updates provided for task type '{type_id}'")
@@ -515,3 +578,17 @@ class TaskTypeManager:
         await self.initialize()
         task_type = await self.get_task_type(type_id)
         return task_type.get("file_patterns", []) if task_type else []
+
+    async def get_default_acceptance_criteria_for_type(self, type_id: str) -> List[Dict]:
+        """Get the default acceptance criteria for a task type"""
+        await self.initialize()
+        task_type = await self.get_task_type(type_id)
+        return task_type.get("default_acceptance_criteria", []) if task_type else []
+
+    async def set_default_acceptance_criteria_for_type(
+        self, type_id: str, criteria: List[Dict]
+    ) -> bool:
+        """Set the default acceptance criteria for a task type"""
+        return await self.update_task_type(
+            type_id, default_acceptance_criteria=criteria
+        )

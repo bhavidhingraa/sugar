@@ -72,6 +72,7 @@ class WorkQueue:
             await self._migrate_timing_columns(db)
             await self._migrate_task_types_table(db)
             await self._migrate_orchestration_columns(db)
+            await self._migrate_acceptance_criteria_column(db)
 
             await db.commit()
 
@@ -275,6 +276,24 @@ class WorkQueue:
         except Exception as e:
             logger.warning(f"Orchestration migration warning (non-critical): {e}")
 
+    async def _migrate_acceptance_criteria_column(self, db):
+        """Add acceptance_criteria column to work_items table"""
+        try:
+            # Check if acceptance_criteria column exists
+            cursor = await db.execute("PRAGMA table_info(work_items)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            # Add acceptance_criteria column (JSON field)
+            if "acceptance_criteria" not in column_names:
+                await db.execute(
+                    "ALTER TABLE work_items ADD COLUMN acceptance_criteria TEXT"
+                )
+                logger.info("Added acceptance_criteria column to existing database")
+
+        except Exception as e:
+            logger.warning(f"Acceptance criteria migration warning (non-critical): {e}")
+
     async def close(self):
         """Close the work queue (for testing)"""
         # SQLite connections are closed automatically, but this method
@@ -319,12 +338,20 @@ class WorkQueue:
             else:
                 blocked_by_json = blocked_by
 
+            # Prepare acceptance_criteria as JSON if it's a list
+            acceptance_criteria = work_item.get("acceptance_criteria", [])
+            if isinstance(acceptance_criteria, list):
+                acceptance_criteria_json = json.dumps(acceptance_criteria) if acceptance_criteria else None
+            else:
+                acceptance_criteria_json = acceptance_criteria
+
             await db.execute(
                 """
                 INSERT INTO work_items
                 (id, type, title, description, priority, status, source, source_file, context,
-                 orchestrate, parent_task_id, stage, blocked_by, context_path, assigned_agent)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 orchestrate, parent_task_id, stage, blocked_by, context_path, assigned_agent,
+                 acceptance_criteria)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     work_id,
@@ -342,6 +369,7 @@ class WorkQueue:
                     blocked_by_json if blocked_by else None,
                     work_item.get("context_path"),
                     work_item.get("assigned_agent"),
+                    acceptance_criteria_json,
                 ),
             )
             await db.commit()
@@ -651,7 +679,8 @@ class WorkQueue:
                        context, created_at, updated_at, attempts, last_attempt_at,
                        completed_at, result, total_execution_time, started_at,
                        total_elapsed_time, commit_sha,
-                       orchestrate, parent_task_id, stage, blocked_by, context_path, assigned_agent
+                       orchestrate, parent_task_id, stage, blocked_by, context_path, assigned_agent,
+                       acceptance_criteria
                 FROM work_items
                 WHERE id = ?
             """,
@@ -685,6 +714,7 @@ class WorkQueue:
                         "blocked_by": json.loads(row[21]) if row[21] else [],
                         "context_path": row[22],
                         "assigned_agent": row[23],
+                        "acceptance_criteria": json.loads(row[24]) if row[24] else [],
                     }
                 return None
 
@@ -705,9 +735,9 @@ class WorkQueue:
         values = []
 
         for key, value in updates.items():
-            if key == "context":
+            if key in ("context", "acceptance_criteria", "blocked_by"):
                 set_clauses.append(f"{key} = ?")
-                values.append(json.dumps(value))
+                values.append(json.dumps(value) if value else None)
             else:
                 set_clauses.append(f"{key} = ?")
                 values.append(value)

@@ -35,6 +35,9 @@ from .preflight_checks import PreFlightChecker, PreFlightCheckResult
 from .failure_handler import VerificationFailureHandler, FailureReport
 from .diff_validator import DiffValidator, DiffValidationResult
 
+# Phase 4 exports - Acceptance Criteria
+from .criteria_templates import CriteriaTemplates
+
 __all__ = [
     # Phase 1
     "TestExecutionValidator",
@@ -56,4 +59,6 @@ __all__ = [
     "FailureReport",
     "DiffValidator",
     "DiffValidationResult",
+    # Phase 4
+    "CriteriaTemplates",
 ]

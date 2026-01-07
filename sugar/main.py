@@ -329,6 +329,12 @@ def init(project_dir):
     is_flag=True,
     help="Enable intelligent triage (auto-detect Ralph mode and completion criteria)",
 )
+@click.option(
+    "--acceptance-criteria",
+    type=str,
+    default=None,
+    help="JSON string or @file path with acceptance criteria for task completion",
+)
 @click.pass_context
 def add(
     ctx,
@@ -347,6 +353,7 @@ def add(
     max_iterations,
     completion_promise,
     triage,
+    acceptance_criteria,
 ):
     """Add a new task to Sugar work queue
 
@@ -485,6 +492,36 @@ def add(
             if "id" not in task_data or not task_data["id"]:
                 task_data["id"] = str(uuid.uuid4())
 
+        # Process acceptance criteria if provided
+        if acceptance_criteria:
+            try:
+                from .quality_gates.criteria_templates import CriteriaTemplates
+
+                # Check if it's a file reference (starts with @)
+                if acceptance_criteria.startswith("@"):
+                    criteria_file = acceptance_criteria[1:]
+                    with open(criteria_file, "r") as f:
+                        parsed_criteria = json.load(f)
+                else:
+                    parsed_criteria = json.loads(acceptance_criteria)
+
+                # Validate the criteria
+                is_valid, errors = CriteriaTemplates.validate_criteria_list(parsed_criteria)
+                if not is_valid:
+                    click.echo("❌ Invalid acceptance criteria:", err=True)
+                    for error in errors[:3]:
+                        click.echo(f"  - {error}", err=True)
+                    raise click.Abort()
+
+                task_data["acceptance_criteria"] = parsed_criteria
+
+            except json.JSONDecodeError as e:
+                click.echo(f"❌ Invalid JSON in acceptance criteria: {e}", err=True)
+                raise click.Abort()
+            except FileNotFoundError:
+                click.echo(f"❌ Acceptance criteria file not found: {acceptance_criteria[1:]}", err=True)
+                raise click.Abort()
+
         # Perform intelligent triage if enabled
         triage_info = ""
         if triage and not ralph:  # Triage recommends Ralph mode if needed
@@ -536,8 +573,13 @@ def add(
             max_iter = task_data["context"].get("max_iterations", 10)
             ralph_mode = f" [Ralph: max {max_iter} iterations]"
 
+        criteria_info = ""
+        if task_data.get("acceptance_criteria"):
+            criteria_count = len(task_data["acceptance_criteria"])
+            criteria_info = f" [Acceptance: {criteria_count} criteria]"
+
         click.echo(
-            f"✅ Added {task_data.get('type', task_type)} task: '{task_data.get('title', title)}' ({urgency}){input_method}{ralph_mode}{triage_info}"
+            f"✅ Added {task_data.get('type', task_type)} task: '{task_data.get('title', title)}' ({urgency}){input_method}{ralph_mode}{triage_info}{criteria_info}"
         )
 
     except Exception as e:
