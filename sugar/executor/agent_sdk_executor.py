@@ -21,6 +21,11 @@ from ..profiles import IssueResponderProfile
 from ..config import IssueResponderConfig
 from ..integrations import GitHubClient
 from ..ralph import RalphWiggumProfile, RalphConfig
+from ..ralph.signals import (
+    CompletionSignal,
+    CompletionSignalDetector,
+    CompletionType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +77,9 @@ class AgentSDKExecutor(BaseExecutor):
         self._agent: Optional[SugarAgent] = None
         self._session_active = False
 
+        # Completion signal detector for all executions
+        self._signal_detector = CompletionSignalDetector()
+
         logger.debug(f"AgentSDKExecutor initialized with model: {self.model}")
         logger.debug(f"Quality gates enabled: {self.quality_gates_enabled}")
         logger.debug(f"Dry run mode: {self.dry_run}")
@@ -95,6 +103,58 @@ class AgentSDKExecutor(BaseExecutor):
                 quality_gates_config=self.quality_gates_config,
             )
         return self._agent
+
+    def detect_completion_signal(self, content: str) -> CompletionSignal:
+        """
+        Detect completion signal in agent output.
+
+        This method detects various completion signal patterns:
+        - <promise>TEXT</promise>
+        - <complete>TEXT</complete>
+        - <done>TEXT</done>
+        - TASK_COMPLETE: description
+
+        Args:
+            content: The agent output content to check
+
+        Returns:
+            CompletionSignal with detection results
+        """
+        return self._signal_detector.detect(content)
+
+    def _enhance_result_with_completion_signal(
+        self, result: Dict[str, Any], content: str
+    ) -> Dict[str, Any]:
+        """
+        Enhance execution result with completion signal information.
+
+        Adds completion signal detection to any execution result,
+        allowing consistent signal handling across all execution types.
+
+        Args:
+            result: The execution result dictionary
+            content: The agent output content
+
+        Returns:
+            Enhanced result with completion signal info
+        """
+        signal = self.detect_completion_signal(content)
+
+        if signal.detected:
+            result["completion_signal"] = signal.to_dict()
+            result["completion_detected"] = True
+            result["completion_type"] = signal.signal_type.name if signal.signal_type else None
+            result["completion_text"] = signal.signal_text
+
+            logger.debug(
+                f"Completion signal detected: type={signal.signal_type.name}, "
+                f"text='{signal.signal_text[:50] if signal.signal_text else ''}...'"
+            )
+        else:
+            result["completion_signal"] = None
+            result["completion_detected"] = False
+
+        return result
 
     async def _execute_issue_response(self, work_item: Dict) -> Dict:
         """Execute an issue response task using IssueResponderProfile"""
@@ -328,6 +388,11 @@ class AgentSDKExecutor(BaseExecutor):
             result["model"] = self.model
             result["execution_time"] = execution_time
 
+            # Detect completion signals in all executions
+            content = result.get("content", result.get("output", ""))
+            if content:
+                result = self._enhance_result_with_completion_signal(result, content)
+
             logger.info(
                 f"Task completed in {execution_time:.2f}s: "
                 f"{work_item.get('title', 'unknown')}"
@@ -350,6 +415,8 @@ class AgentSDKExecutor(BaseExecutor):
                 "files_changed": [],
                 "actions_taken": [],
                 "summary": f"Execution failed: {e}",
+                "completion_signal": None,
+                "completion_detected": False,
             }
 
     async def validate(self) -> bool:

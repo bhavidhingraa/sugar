@@ -4,6 +4,9 @@ Completion Criteria Validator
 Validates that tasks have clear exit conditions before spawning Ralph Wiggum loops.
 This prevents infinite loops by ensuring every task has:
 - A <promise> tag pattern, OR
+- A <complete> tag pattern, OR
+- A <done> tag pattern, OR
+- A TASK_COMPLETE prefix pattern, OR
 - A max_iterations limit, OR
 - Clear success criteria that can be detected
 
@@ -16,6 +19,12 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from .signals import (
+    CompletionSignal,
+    CompletionSignalDetector,
+    CompletionType,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,11 +36,15 @@ class ValidationResult:
     is_valid: bool
 
     # Detected completion mechanism
+    # Legacy string type for backward compatibility
     completion_type: Optional[str] = (
-        None  # "promise", "max_iterations", "criteria", None
+        None  # "promise", "complete", "done", "task_complete", "max_iterations", "criteria", None
     )
 
-    # Extracted promise text (if any)
+    # Structured completion signal (new)
+    completion_signal: Optional[CompletionSignal] = None
+
+    # Extracted promise text (if any) - kept for backward compatibility
     promise_text: Optional[str] = None
 
     # Extracted success criteria (if any)
@@ -52,6 +65,7 @@ class ValidationResult:
         return {
             "is_valid": self.is_valid,
             "completion_type": self.completion_type,
+            "completion_signal": self.completion_signal.to_dict() if self.completion_signal else None,
             "promise_text": self.promise_text,
             "success_criteria": self.success_criteria,
             "max_iterations": self.max_iterations,
@@ -67,15 +81,19 @@ class CompletionCriteriaValidator:
 
     This validator checks for:
     1. <promise>TEXT</promise> tags that signal completion
-    2. Explicit max_iterations settings
-    3. Clear success criteria in "When complete:" sections
-    4. Common completion patterns
+    2. <complete>TEXT</complete> tags that signal completion
+    3. <done>TEXT</done> tags that signal completion
+    4. TASK_COMPLETE: prefix pattern
+    5. Explicit max_iterations settings
+    6. Clear success criteria in "When complete:" sections
+    7. Common completion patterns
 
     Without at least one of these, the validator rejects the task to prevent
     infinite loops.
     """
 
-    # Pattern to detect <promise> tags
+    # Legacy pattern kept for backward compatibility
+    # New code should use CompletionSignalDetector
     PROMISE_PATTERN = re.compile(
         r"<promise>\s*(.+?)\s*</promise>", re.IGNORECASE | re.DOTALL
     )
@@ -115,6 +133,19 @@ class CompletionCriteriaValidator:
         "success when",
     ]
 
+    # Mapping from CompletionType to string representation (for backward compatibility)
+    _COMPLETION_TYPE_MAP = {
+        CompletionType.PROMISE: "promise",
+        CompletionType.COMPLETE: "complete",
+        CompletionType.DONE: "done",
+        CompletionType.TASK_COMPLETE_PREFIX: "task_complete",
+        CompletionType.MAX_ITERATIONS: "max_iterations",
+        CompletionType.CRITERIA: "criteria",
+        CompletionType.IMPLICIT: "implicit",
+        CompletionType.STUCK: "stuck",
+        CompletionType.ERROR: "error",
+    }
+
     def __init__(self, strict: bool = True):
         """
         Initialize the validator.
@@ -124,6 +155,7 @@ class CompletionCriteriaValidator:
                     If False, allow tasks with implicit criteria.
         """
         self.strict = strict
+        self.signal_detector = CompletionSignalDetector()
 
     def validate(
         self, prompt: str, config: Optional[Dict[str, Any]] = None
@@ -146,13 +178,20 @@ class CompletionCriteriaValidator:
             result.errors.append("Prompt is empty")
             return result
 
-        # 1. Check for <promise> tags
-        promise_match = self.PROMISE_PATTERN.search(prompt)
-        if promise_match:
-            result.promise_text = promise_match.group(1).strip()
-            result.completion_type = "promise"
+        # 1. Check for completion signal tags using the new signal detector
+        # This detects <promise>, <complete>, <done>, and TASK_COMPLETE: patterns
+        signal = self.signal_detector.detect(prompt)
+        if signal.detected:
+            result.completion_signal = signal
+            result.promise_text = signal.signal_text
+            result.completion_type = self._COMPLETION_TYPE_MAP.get(
+                signal.signal_type, "promise"
+            )
             result.is_valid = True
-            logger.debug(f"Found promise tag: {result.promise_text}")
+            logger.debug(
+                f"Found completion signal: type={signal.signal_type.name}, "
+                f"text={result.promise_text}"
+            )
 
         # 2. Check for max_iterations
         max_iters = config.get("max_iterations")
@@ -257,16 +296,48 @@ class CompletionCriteriaValidator:
         """
         Check if output contains a completion signal.
 
+        This method is kept for backward compatibility. For new code,
+        use detect_completion_signal() which returns a CompletionSignal.
+
         Args:
             output: The output text to check
 
         Returns:
             Tuple of (is_complete, promise_text)
         """
-        match = self.PROMISE_PATTERN.search(output)
-        if match:
-            return True, match.group(1).strip()
+        signal = self.signal_detector.detect(output)
+        if signal.detected:
+            return True, signal.signal_text
         return False, None
+
+    def detect_completion_signal(self, output: str) -> CompletionSignal:
+        """
+        Detect and return structured completion signal from output.
+
+        This is the preferred method for detecting completion signals.
+        It returns a CompletionSignal with full type information.
+
+        Args:
+            output: The output text to check
+
+        Returns:
+            CompletionSignal with detection results
+        """
+        return self.signal_detector.detect(output)
+
+    def detect_all_completion_signals(self, output: str) -> List[CompletionSignal]:
+        """
+        Detect all completion signals in output.
+
+        Useful when multiple signals might be present.
+
+        Args:
+            output: The output text to check
+
+        Returns:
+            List of all detected CompletionSignals
+        """
+        return self.signal_detector.detect_all(output)
 
     def format_validation_error(self, result: ValidationResult) -> str:
         """Format validation result as human-readable error message"""
