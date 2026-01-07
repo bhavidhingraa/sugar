@@ -267,15 +267,16 @@ class TestRuntimeComplexityAnalysis:
     def test_complexity_keywords_upgrade_tier(self, model_router):
         """Complex keywords in task content upgrade tier."""
         task = {
-            "type": "feature",  # Standard tier
-            "title": "Refactor and migrate entire database",
-            "description": "Major system-wide architecture change",
+            "type": "bug_fix",  # Standard tier (not already complex)
+            "title": "Refactor and migrate entire database layer",
+            "description": "Major system-wide architecture change with breaking changes",
         }
 
         selection = model_router.route(task)
 
+        # Should be upgraded to complex due to complexity keywords
         assert selection.tier == ModelTier.COMPLEX
-        assert "complexity indicators" in selection.reason.lower() or "refactor" in selection.reason.lower()
+        assert "complexity indicators" in selection.reason.lower()
 
     def test_simple_keywords_downgrade_tier(self, model_router):
         """Simple keywords in task content can downgrade tier."""
