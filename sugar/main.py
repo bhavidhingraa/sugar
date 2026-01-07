@@ -1423,6 +1423,108 @@ def logs(ctx, lines, follow, level):
 
 
 @cli.command()
+@click.option("--lines", "-n", default=None, type=int, help="Number of lines to show (default: all)")
+@click.option("--sessions", "-s", default=None, type=int, help="Show last N session summaries")
+@click.option("--clear", is_flag=True, help="Clear the learnings log (creates backup)")
+@click.option("--refresh", is_flag=True, help="Generate fresh insights and save to log")
+@click.pass_context
+def learnings(ctx, lines, sessions, clear, refresh):
+    """View Sugar learning insights and progress log
+
+    Shows the contents of .sugar/LEARNINGS.md which contains:
+    - Session summaries with performance metrics
+    - Success/failure patterns
+    - Recommendations for system improvement
+
+    Examples:
+        sugar learnings              # Show full learnings log
+        sugar learnings -n 100       # Show last 100 lines
+        sugar learnings -s 5         # Show last 5 session summaries
+        sugar learnings --refresh    # Generate new insights and save
+        sugar learnings --clear      # Clear log (creates backup)
+    """
+    from .learning.learnings_writer import LearningsWriter
+    from .learning.feedback_processor import FeedbackProcessor
+    from .storage.work_queue import WorkQueue
+    import yaml
+
+    try:
+        config_file = ctx.obj["config"]
+        with open(config_file, "r") as f:
+            config = yaml.safe_load(f)
+
+        sugar_dir = Path(config_file).parent
+        learnings_writer = LearningsWriter(str(sugar_dir))
+
+        if clear:
+            # Clear learnings with backup
+            click.echo("🗑️ Clearing learnings log...")
+            success = learnings_writer.clear_learnings(backup=True)
+            if success:
+                click.echo("✅ Learnings log cleared (backup created)")
+            else:
+                click.echo("❌ Failed to clear learnings log", err=True)
+                sys.exit(1)
+            return
+
+        if refresh:
+            # Generate fresh insights and save
+            click.echo("🔄 Generating fresh insights...")
+            work_queue = WorkQueue(config["sugar"]["storage"]["database"])
+
+            async def _refresh_insights():
+                await work_queue.initialize()
+                processor = FeedbackProcessor(work_queue, str(sugar_dir))
+                insights = await processor.process_feedback()
+                if insights:
+                    success = await processor.save_insights_to_log()
+                    return success, insights
+                return False, {}
+
+            success, insights = asyncio.run(_refresh_insights())
+
+            if success:
+                metrics = insights.get("performance_metrics", {})
+                click.echo(f"✅ Insights saved to .sugar/LEARNINGS.md")
+                click.echo(f"   Tasks processed: {metrics.get('total_tasks_processed', 0)}")
+                click.echo(f"   Success rate: {metrics.get('success_rate_percent', 0):.1f}%")
+                recommendations = insights.get("recommendations", [])
+                click.echo(f"   Recommendations: {len(recommendations)}")
+            else:
+                click.echo("❌ No insights to save (process some tasks first)", err=True)
+            return
+
+        if sessions:
+            # Show recent session summaries
+            recent = learnings_writer.get_recent_sessions(sessions)
+            if not recent:
+                click.echo("📭 No session summaries found. Run 'sugar learnings --refresh' to generate.")
+                return
+
+            click.echo(f"\n📊 Last {len(recent)} Session Summaries\n")
+            click.echo("=" * 60)
+            for session in recent:
+                click.echo(session["content"])
+                click.echo("-" * 60)
+            return
+
+        # Default: show learnings content
+        content = learnings_writer.get_learnings(lines)
+        if content:
+            click.echo(content)
+        else:
+            click.echo("📭 No learnings recorded yet.")
+            click.echo("   Run 'sugar learnings --refresh' to generate insights from task history.")
+
+    except FileNotFoundError:
+        click.echo("❌ Sugar not initialized. Run 'sugar init' first.", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"❌ Error reading learnings: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
 @click.pass_context
 def debug(ctx):
     """Show debugging information about last Claude execution"""
