@@ -11,15 +11,18 @@ from collections import defaultdict
 import statistics
 import re
 
+from .learnings_writer import LearningsWriter
+
 logger = logging.getLogger(__name__)
 
 
 class FeedbackProcessor:
     """Process execution feedback and extract learning insights"""
 
-    def __init__(self, work_queue):
+    def __init__(self, work_queue, sugar_dir: str = ".sugar"):
         self.work_queue = work_queue
         self.learning_cache = {}  # Cache insights to avoid recomputation
+        self.learnings_writer = LearningsWriter(sugar_dir)
 
     async def process_feedback(self) -> Dict[str, Any]:
         """Process all execution feedback and generate insights"""
@@ -539,3 +542,34 @@ class FeedbackProcessor:
             ),
             "available_insights": list(self.learning_cache.keys()),
         }
+
+    async def save_insights_to_log(self) -> bool:
+        """
+        Save the current cached insights to the LEARNINGS.md progress log.
+
+        Returns:
+            True if save was successful, False otherwise
+        """
+        if "last_insights" not in self.learning_cache:
+            logger.warning("No insights to save - run process_feedback() first")
+            return False
+
+        insights = self.learning_cache["last_insights"]
+        success = self.learnings_writer.write_session_summary(insights)
+
+        if success:
+            logger.info("📊 Saved insights to .sugar/LEARNINGS.md")
+
+        return success
+
+    def get_learnings_content(self, lines: Optional[int] = None) -> str:
+        """
+        Get the content of the learnings log.
+
+        Args:
+            lines: Number of most recent lines to return (None for all)
+
+        Returns:
+            Content of the LEARNINGS.md file
+        """
+        return self.learnings_writer.get_learnings(lines)
