@@ -1,6 +1,6 @@
 # Sugar 🍰
 
-Vibe coding while you sleep.
+The dev team that never stops.
 
 Autonomous AI development for Claude Code. Sugar builds features, fixes bugs, and ships code while you focus on what matters.
 
