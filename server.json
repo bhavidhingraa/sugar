@@ -7,13 +7,13 @@
     "url": "https://github.com/roboticforce/sugar",
     "source": "github"
   },
-  "version": "3.4.2",
+  "version": "3.4.3.dev0",
   "websiteUrl": "https://github.com/roboticforce/sugar",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "sugarai",
-      "version": "3.4.2",
+      "version": "3.4.3.dev0",
       "packageArguments": [
         {"type": "positional", "value": "mcp"},
         {"type": "positional", "value": "serve"}
