@@ -72,6 +72,9 @@ class WorkQueue:
             await self._migrate_timing_columns(db)
             await self._migrate_task_types_table(db)
             await self._migrate_orchestration_columns(db)
+            await self._migrate_acceptance_criteria_column(db)
+            await self._migrate_verification_columns(db)
+            await self._migrate_thinking_columns(db)
 
             await db.commit()
 
@@ -275,6 +278,90 @@ class WorkQueue:
         except Exception as e:
             logger.warning(f"Orchestration migration warning (non-critical): {e}")
 
+    async def _migrate_acceptance_criteria_column(self, db):
+        """Add acceptance_criteria column to work_items table"""
+        try:
+            # Check if acceptance_criteria column exists
+            cursor = await db.execute("PRAGMA table_info(work_items)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            # Add acceptance_criteria column (JSON field)
+            if "acceptance_criteria" not in column_names:
+                await db.execute(
+                    "ALTER TABLE work_items ADD COLUMN acceptance_criteria TEXT"
+                )
+                logger.info("Added acceptance_criteria column to existing database")
+
+        except Exception as e:
+            logger.warning(f"Acceptance criteria migration warning (non-critical): {e}")
+
+    async def _migrate_verification_columns(self, db):
+        """Add verification columns to work_items table (AUTO-005)"""
+        try:
+            # Check existing columns
+            cursor = await db.execute("PRAGMA table_info(work_items)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            # Add verification_required column (boolean flag)
+            if "verification_required" not in column_names:
+                await db.execute(
+                    "ALTER TABLE work_items ADD COLUMN verification_required BOOLEAN DEFAULT 0"
+                )
+                logger.info("Added verification_required column to existing database")
+
+            # Add verification_status column (pending, verified, failed)
+            if "verification_status" not in column_names:
+                await db.execute(
+                    "ALTER TABLE work_items ADD COLUMN verification_status TEXT DEFAULT 'pending'"
+                )
+                logger.info("Added verification_status column to existing database")
+
+            # Add verification_results column (JSON field storing detailed results)
+            if "verification_results" not in column_names:
+                await db.execute(
+                    "ALTER TABLE work_items ADD COLUMN verification_results TEXT"
+                )
+                logger.info("Added verification_results column to existing database")
+
+        except Exception as e:
+            logger.warning(
+                f"Verification columns migration warning (non-critical): {e}"
+            )
+
+    async def _migrate_thinking_columns(self, db):
+        """Add thinking columns to work_items table for capturing Claude's reasoning"""
+        try:
+            # Check existing columns
+            cursor = await db.execute("PRAGMA table_info(work_items)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            # Add thinking_log_path column (path to thinking markdown file)
+            if "thinking_log_path" not in column_names:
+                await db.execute(
+                    "ALTER TABLE work_items ADD COLUMN thinking_log_path TEXT"
+                )
+                logger.info("Added thinking_log_path column to existing database")
+
+            # Add thinking_summary column (summary of thinking captured)
+            if "thinking_summary" not in column_names:
+                await db.execute(
+                    "ALTER TABLE work_items ADD COLUMN thinking_summary TEXT"
+                )
+                logger.info("Added thinking_summary column to existing database")
+
+            # Add thinking_stats column (JSON field with thinking statistics)
+            if "thinking_stats" not in column_names:
+                await db.execute(
+                    "ALTER TABLE work_items ADD COLUMN thinking_stats TEXT"
+                )
+                logger.info("Added thinking_stats column to existing database")
+
+        except Exception as e:
+            logger.warning(f"Thinking columns migration warning (non-critical): {e}")
+
     async def close(self):
         """Close the work queue (for testing)"""
         # SQLite connections are closed automatically, but this method
@@ -319,12 +406,22 @@ class WorkQueue:
             else:
                 blocked_by_json = blocked_by
 
+            # Prepare acceptance_criteria as JSON if it's a list
+            acceptance_criteria = work_item.get("acceptance_criteria", [])
+            if isinstance(acceptance_criteria, list):
+                acceptance_criteria_json = (
+                    json.dumps(acceptance_criteria) if acceptance_criteria else None
+                )
+            else:
+                acceptance_criteria_json = acceptance_criteria
+
             await db.execute(
                 """
                 INSERT INTO work_items
                 (id, type, title, description, priority, status, source, source_file, context,
-                 orchestrate, parent_task_id, stage, blocked_by, context_path, assigned_agent)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 orchestrate, parent_task_id, stage, blocked_by, context_path, assigned_agent,
+                 acceptance_criteria)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     work_id,
@@ -342,6 +439,7 @@ class WorkQueue:
                     blocked_by_json if blocked_by else None,
                     work_item.get("context_path"),
                     work_item.get("assigned_agent"),
+                    acceptance_criteria_json,
                 ),
             )
             await db.commit()
@@ -422,24 +520,40 @@ class WorkQueue:
             except (TypeError, AttributeError):
                 execution_time = 0.0
 
+            # Extract thinking data from result
+            thinking_log_path = result.get("thinking_log_path")
+            thinking_summary = result.get("thinking_summary")
+            thinking_stats = result.get("thinking_stats")
+            thinking_stats_json = json.dumps(thinking_stats) if thinking_stats else None
+
             await db.execute(
                 """
-                UPDATE work_items 
+                UPDATE work_items
                 SET status = 'completed',
                     result = ?,
                     completed_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP,
                     total_execution_time = total_execution_time + ?,
                     total_elapsed_time = (
-                        CASE 
-                            WHEN started_at IS NOT NULL 
+                        CASE
+                            WHEN started_at IS NOT NULL
                             THEN (julianday(CURRENT_TIMESTAMP) - julianday(started_at)) * 86400.0
                             ELSE (julianday(CURRENT_TIMESTAMP) - julianday(created_at)) * 86400.0
                         END
-                    )
+                    ),
+                    thinking_log_path = ?,
+                    thinking_summary = ?,
+                    thinking_stats = ?
                 WHERE id = ?
             """,
-                (json.dumps(result), execution_time, work_id),
+                (
+                    json.dumps(result),
+                    execution_time,
+                    thinking_log_path,
+                    thinking_summary,
+                    thinking_stats_json,
+                    work_id,
+                ),
             )
 
             await db.commit()
@@ -651,7 +765,9 @@ class WorkQueue:
                        context, created_at, updated_at, attempts, last_attempt_at,
                        completed_at, result, total_execution_time, started_at,
                        total_elapsed_time, commit_sha,
-                       orchestrate, parent_task_id, stage, blocked_by, context_path, assigned_agent
+                       orchestrate, parent_task_id, stage, blocked_by, context_path, assigned_agent,
+                       acceptance_criteria,
+                       verification_required, verification_status, verification_results
                 FROM work_items
                 WHERE id = ?
             """,
@@ -685,6 +801,14 @@ class WorkQueue:
                         "blocked_by": json.loads(row[21]) if row[21] else [],
                         "context_path": row[22],
                         "assigned_agent": row[23],
+                        "acceptance_criteria": json.loads(row[24]) if row[24] else [],
+                        "verification_required": (
+                            bool(row[25]) if row[25] is not None else False
+                        ),
+                        "verification_status": row[26] if row[26] else "pending",
+                        "verification_results": (
+                            json.loads(row[27]) if row[27] else None
+                        ),
                     }
                 return None
 
@@ -705,9 +829,14 @@ class WorkQueue:
         values = []
 
         for key, value in updates.items():
-            if key == "context":
+            if key in (
+                "context",
+                "acceptance_criteria",
+                "blocked_by",
+                "verification_results",
+            ):
                 set_clauses.append(f"{key} = ?")
-                values.append(json.dumps(value))
+                values.append(json.dumps(value) if value else None)
             else:
                 set_clauses.append(f"{key} = ?")
                 values.append(value)

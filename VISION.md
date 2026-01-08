@@ -196,4 +196,4 @@ Built by [RoboticForce, Inc.](https://roboticforce.io)
 
 ---
 
-*Sugar — Vibe coding while you sleep.* 🍰
+*Sugar — The dev team that never stops.* 🍰

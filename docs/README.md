@@ -15,6 +15,9 @@ Documentation for developers who want to **use** Sugar in their projects:
 - **[Examples](user/examples.md)** - Real-world usage examples
 - **[Configuration Best Practices](user/configuration-best-practices.md)** - Essential config patterns and exclusions
 - **[Agent SDK Guide](user/agent-sdk.md)** - Native Claude Agent SDK integration (v3.0)
+- **[Task Hooks Guide](task-hooks.md)** - Pre/post execution hooks for automation
+- **[Thinking Capture Guide](thinking-capture.md)** - View Claude's reasoning during execution
+- **[Model Routing Guide](dev/model-routing-guide.md)** - Intelligent model selection by task
 - **[Billing & Pricing](user/billing.md)** - Pricing tiers and API key management
 - **[Configuration Reference](user/configuration.md)** - Complete configuration options
 - **[Troubleshooting](user/troubleshooting.md)** - Common issues and solutions

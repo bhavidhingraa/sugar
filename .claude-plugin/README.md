@@ -1,6 +1,6 @@
 # Sugar 🍰 - Claude Code Plugin
 
-Vibe coding while you sleep.
+The dev team that never stops.
 
 Autonomous AI development for Claude Code with background task execution.
 
@@ -73,6 +73,7 @@ Install the Sugar plugin via Claude Code using one of these methods:
 - `/sugar-review` - Review and manage pending tasks
 - `/sugar-run` - Start autonomous execution mode
 - `/sugar-analyze` - Analyze codebase for potential work
+- `/sugar-thinking` - View Claude's thinking logs for tasks *(New in v3.4)*
 
 ### Specialized Agents
 

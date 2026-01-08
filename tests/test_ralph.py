@@ -13,6 +13,12 @@ from sugar.ralph import (
     ValidationResult,
     RalphWiggumProfile,
     RalphConfig,
+    CompletionSignal,
+    CompletionType,
+    CompletionSignalDetector,
+    detect_completion,
+    has_completion_signal,
+    extract_signal_text,
 )
 
 
@@ -408,3 +414,360 @@ class TestValidationPatterns:
     def test_max_iterations_patterns(self, validator, iterations_text, expected):
         result = validator.validate(iterations_text)
         assert result.max_iterations == expected
+
+
+class TestCompletionType:
+    """Tests for CompletionType enum"""
+
+    def test_explicit_signal_types(self):
+        """Test that explicit signal types are correctly identified"""
+        assert CompletionType.PROMISE.is_explicit_signal() is True
+        assert CompletionType.COMPLETE.is_explicit_signal() is True
+        assert CompletionType.DONE.is_explicit_signal() is True
+        assert CompletionType.TASK_COMPLETE_PREFIX.is_explicit_signal() is True
+
+    def test_non_explicit_signal_types(self):
+        """Test that non-explicit types are correctly identified"""
+        assert CompletionType.MAX_ITERATIONS.is_explicit_signal() is False
+        assert CompletionType.CRITERIA.is_explicit_signal() is False
+        assert CompletionType.IMPLICIT.is_explicit_signal() is False
+        assert CompletionType.STUCK.is_explicit_signal() is False
+        assert CompletionType.ERROR.is_explicit_signal() is False
+
+    def test_success_signal_types(self):
+        """Test success signal type identification"""
+        assert CompletionType.PROMISE.is_success_signal() is True
+        assert CompletionType.COMPLETE.is_success_signal() is True
+        assert CompletionType.DONE.is_success_signal() is True
+        assert CompletionType.TASK_COMPLETE_PREFIX.is_success_signal() is True
+        assert CompletionType.CRITERIA.is_success_signal() is True
+
+    def test_non_success_signal_types(self):
+        """Test non-success signal type identification"""
+        assert CompletionType.MAX_ITERATIONS.is_success_signal() is False
+        assert CompletionType.IMPLICIT.is_success_signal() is False
+        assert CompletionType.STUCK.is_success_signal() is False
+        assert CompletionType.ERROR.is_success_signal() is False
+
+
+class TestCompletionSignal:
+    """Tests for CompletionSignal dataclass"""
+
+    def test_default_signal(self):
+        """Test default signal is not detected"""
+        signal = CompletionSignal()
+        assert signal.detected is False
+        assert signal.signal_type is None
+        assert signal.signal_text is None
+        assert bool(signal) is False
+
+    def test_detected_signal(self):
+        """Test detected signal with all fields"""
+        signal = CompletionSignal(
+            detected=True,
+            signal_type=CompletionType.PROMISE,
+            signal_text="DONE",
+            raw_match="<promise>DONE</promise>",
+            confidence=1.0,
+        )
+        assert signal.detected is True
+        assert signal.signal_type == CompletionType.PROMISE
+        assert signal.signal_text == "DONE"
+        assert bool(signal) is True
+
+    def test_is_successful(self):
+        """Test is_successful method"""
+        # Successful signal
+        signal = CompletionSignal(
+            detected=True,
+            signal_type=CompletionType.PROMISE,
+            signal_text="DONE",
+        )
+        assert signal.is_successful() is True
+
+        # Non-detected signal
+        signal = CompletionSignal(detected=False)
+        assert signal.is_successful() is False
+
+        # Detected but error type
+        signal = CompletionSignal(
+            detected=True,
+            signal_type=CompletionType.ERROR,
+        )
+        assert signal.is_successful() is False
+
+    def test_to_dict(self):
+        """Test conversion to dictionary"""
+        signal = CompletionSignal(
+            detected=True,
+            signal_type=CompletionType.COMPLETE,
+            signal_text="Task finished",
+            raw_match="<complete>Task finished</complete>",
+        )
+        d = signal.to_dict()
+
+        assert d["detected"] is True
+        assert d["signal_type"] == "COMPLETE"
+        assert d["signal_text"] == "Task finished"
+        assert d["is_successful"] is True
+
+
+class TestCompletionSignalDetector:
+    """Tests for CompletionSignalDetector"""
+
+    @pytest.fixture
+    def detector(self):
+        return CompletionSignalDetector()
+
+    def test_detect_promise_tag(self, detector):
+        """Test detection of <promise> tags"""
+        text = "Task done! <promise>DONE</promise>"
+        signal = detector.detect(text)
+
+        assert signal.detected is True
+        assert signal.signal_type == CompletionType.PROMISE
+        assert signal.signal_text == "DONE"
+
+    def test_detect_complete_tag(self, detector):
+        """Test detection of <complete> tags"""
+        text = "All finished. <complete>SUCCESS</complete>"
+        signal = detector.detect(text)
+
+        assert signal.detected is True
+        assert signal.signal_type == CompletionType.COMPLETE
+        assert signal.signal_text == "SUCCESS"
+
+    def test_detect_done_tag(self, detector):
+        """Test detection of <done> tags"""
+        text = "Everything ready. <done>FINISHED</done>"
+        signal = detector.detect(text)
+
+        assert signal.detected is True
+        assert signal.signal_type == CompletionType.DONE
+        assert signal.signal_text == "FINISHED"
+
+    def test_detect_task_complete_prefix(self, detector):
+        """Test detection of TASK_COMPLETE: prefix"""
+        text = "TASK_COMPLETE: All tests pass and build succeeds"
+        signal = detector.detect(text)
+
+        assert signal.detected is True
+        assert signal.signal_type == CompletionType.TASK_COMPLETE_PREFIX
+        assert "All tests pass" in signal.signal_text
+
+    def test_detect_case_insensitive(self, detector):
+        """Test case insensitivity of detection"""
+        # Uppercase
+        signal = detector.detect("<PROMISE>DONE</PROMISE>")
+        assert signal.detected is True
+
+        # Mixed case
+        signal = detector.detect("<Promise>Done</Promise>")
+        assert signal.detected is True
+
+        # Lowercase prefix
+        signal = detector.detect("task_complete: finished")
+        assert signal.detected is True
+
+    def test_detect_no_signal(self, detector):
+        """Test when no signal is present"""
+        text = "Still working on the task..."
+        signal = detector.detect(text)
+
+        assert signal.detected is False
+        assert signal.signal_type is None
+        assert signal.signal_text is None
+
+    def test_detect_empty_text(self, detector):
+        """Test with empty text"""
+        signal = detector.detect("")
+        assert signal.detected is False
+
+        signal = detector.detect(None)
+        assert signal.detected is False
+
+    def test_detect_multiline_signal(self, detector):
+        """Test detection in multiline text"""
+        text = """
+        Working on the task...
+        Making progress...
+        <promise>
+            TASK COMPLETE
+        </promise>
+        """
+        signal = detector.detect(text)
+
+        assert signal.detected is True
+        assert signal.signal_type == CompletionType.PROMISE
+        assert "TASK COMPLETE" in signal.signal_text
+
+    def test_detect_priority_order(self, detector):
+        """Test that promise takes priority when multiple signals present"""
+        # Promise should be detected first (highest priority)
+        text = "<promise>DONE</promise> <complete>ALSO DONE</complete>"
+        signal = detector.detect(text)
+
+        assert signal.detected is True
+        assert signal.signal_type == CompletionType.PROMISE
+        assert signal.signal_text == "DONE"
+
+    def test_detect_all_signals(self, detector):
+        """Test detecting all signals in text"""
+        text = "<promise>ONE</promise> <complete>TWO</complete> <done>THREE</done>"
+        signals = detector.detect_all(text)
+
+        assert len(signals) == 3
+        types = [s.signal_type for s in signals]
+        assert CompletionType.PROMISE in types
+        assert CompletionType.COMPLETE in types
+        assert CompletionType.DONE in types
+
+    def test_has_signal(self, detector):
+        """Test has_signal convenience method"""
+        assert detector.has_signal("<promise>DONE</promise>") is True
+        assert detector.has_signal("<complete>DONE</complete>") is True
+        assert detector.has_signal("<done>DONE</done>") is True
+        assert detector.has_signal("TASK_COMPLETE: done") is True
+        assert detector.has_signal("no signal here") is False
+
+    def test_create_pattern(self):
+        """Test creating custom tag patterns"""
+        pattern = CompletionSignalDetector.create_pattern("custom")
+        match = pattern.search("<custom>MY SIGNAL</custom>")
+
+        assert match is not None
+        assert match.group(1).strip() == "MY SIGNAL"
+
+    def test_custom_patterns_initialization(self):
+        """Test initialization with custom patterns"""
+        custom_patterns = [
+            ("finished", r"<finished>\s*(.+?)\s*</finished>"),
+        ]
+        detector = CompletionSignalDetector(custom_patterns=custom_patterns)
+
+        # Should still detect default patterns
+        signal = detector.detect("<promise>DONE</promise>")
+        assert signal.detected is True
+
+        # Should also detect custom pattern
+        signal = detector.detect("<finished>ALL DONE</finished>")
+        assert signal.detected is True
+        assert signal.signal_text == "ALL DONE"
+
+
+class TestConvenienceFunctions:
+    """Tests for module-level convenience functions"""
+
+    def test_detect_completion(self):
+        """Test detect_completion function"""
+        signal = detect_completion("<promise>DONE</promise>")
+        assert signal.detected is True
+        assert signal.signal_type == CompletionType.PROMISE
+
+        signal = detect_completion("no signal")
+        assert signal.detected is False
+
+    def test_has_completion_signal(self):
+        """Test has_completion_signal function"""
+        assert has_completion_signal("<promise>DONE</promise>") is True
+        assert has_completion_signal("<complete>DONE</complete>") is True
+        assert has_completion_signal("<done>DONE</done>") is True
+        assert has_completion_signal("TASK_COMPLETE: done") is True
+        assert has_completion_signal("no signal") is False
+
+    def test_extract_signal_text(self):
+        """Test extract_signal_text function"""
+        assert extract_signal_text("<promise>DONE</promise>") == "DONE"
+        assert extract_signal_text("<complete>SUCCESS</complete>") == "SUCCESS"
+        assert extract_signal_text("no signal") is None
+
+
+class TestValidatorWithNewSignals:
+    """Tests for validator using new signal patterns"""
+
+    @pytest.fixture
+    def validator(self):
+        return CompletionCriteriaValidator(strict=True)
+
+    def test_validate_complete_tag(self, validator):
+        """Test validation with <complete> tag"""
+        prompt = "Fix the bug. <complete>FIXED</complete>"
+        result = validator.validate(prompt)
+
+        assert result.is_valid is True
+        assert result.completion_type == "complete"
+        assert result.promise_text == "FIXED"
+        assert result.completion_signal is not None
+        assert result.completion_signal.signal_type == CompletionType.COMPLETE
+
+    def test_validate_done_tag(self, validator):
+        """Test validation with <done> tag"""
+        prompt = "Implement feature. <done>IMPLEMENTED</done>"
+        result = validator.validate(prompt)
+
+        assert result.is_valid is True
+        assert result.completion_type == "done"
+        assert result.promise_text == "IMPLEMENTED"
+
+    def test_validate_task_complete_prefix(self, validator):
+        """Test validation with TASK_COMPLETE prefix"""
+        prompt = "Build the project. TASK_COMPLETE: build successful"
+        result = validator.validate(prompt)
+
+        assert result.is_valid is True
+        assert result.completion_type == "task_complete"
+        assert "build successful" in result.promise_text
+
+    def test_detect_completion_signal_method(self, validator):
+        """Test the new detect_completion_signal method"""
+        output = "<complete>All tests pass</complete>"
+        signal = validator.detect_completion_signal(output)
+
+        assert signal.detected is True
+        assert signal.signal_type == CompletionType.COMPLETE
+        assert signal.signal_text == "All tests pass"
+
+    def test_detect_all_completion_signals_method(self, validator):
+        """Test the new detect_all_completion_signals method"""
+        output = "<promise>ONE</promise> and <done>TWO</done>"
+        signals = validator.detect_all_completion_signals(output)
+
+        assert len(signals) == 2
+
+    def test_backward_compatible_extract_signal(self, validator):
+        """Test that extract_completion_signal still works with new patterns"""
+        # Promise tag (original pattern)
+        is_complete, text = validator.extract_completion_signal(
+            "<promise>DONE</promise>"
+        )
+        assert is_complete is True
+        assert text == "DONE"
+
+        # Complete tag (new pattern)
+        is_complete, text = validator.extract_completion_signal(
+            "<complete>SUCCESS</complete>"
+        )
+        assert is_complete is True
+        assert text == "SUCCESS"
+
+        # Done tag (new pattern)
+        is_complete, text = validator.extract_completion_signal("<done>FINISHED</done>")
+        assert is_complete is True
+        assert text == "FINISHED"
+
+        # TASK_COMPLETE prefix (new pattern)
+        is_complete, text = validator.extract_completion_signal(
+            "TASK_COMPLETE: all done"
+        )
+        assert is_complete is True
+        assert "all done" in text
+
+    def test_validation_result_to_dict_with_signal(self, validator):
+        """Test that ValidationResult.to_dict includes completion_signal"""
+        result = validator.validate("Fix bug <complete>FIXED</complete>")
+        d = result.to_dict()
+
+        assert "completion_signal" in d
+        assert d["completion_signal"] is not None
+        assert d["completion_signal"]["signal_type"] == "COMPLETE"
+        assert d["completion_signal"]["signal_text"] == "FIXED"

@@ -1,6 +1,6 @@
 # Sugar 🍰
 
-Vibe coding while you sleep.
+The dev team that never stops.
 
 Autonomous AI development for Claude Code. Sugar builds features, fixes bugs, and ships code while you focus on what matters.
 
@@ -154,11 +154,17 @@ sugar list --status completed
 - Confidence-based auto-posting
 - Searchable issue history
 
-**Ralph Wiggum Integration** *(New)*
+**Ralph Wiggum Integration**
 - Iterative execution for complex tasks
 - Self-correcting loops until tests pass
 - Prevents single-shot failures
 - Automatic completion detection
+
+**Advanced Security & Control** *(New in v3.4)*
+- Tool restrictions by task type (tier-based)
+- Wildcard bash permissions with fnmatch patterns
+- Pre/post execution hooks for automation
+- Thinking capture for reasoning visibility
 
 ## Ralph Wiggum: Why Sugar Gets It Right
 
@@ -476,6 +482,8 @@ Sugar 3.0 is built natively on the **Claude Agent SDK**, providing:
 - **[Task Orchestration](docs/task_orchestration.md)** - Complex feature decomposition
 - **[GitHub Integration](docs/user/github-integration.md)** - Connect to GitHub
 - **[Configuration Guide](docs/user/configuration-best-practices.md)** - Best practices
+- **[Task Hooks](docs/task-hooks.md)** - Pre/post execution hooks
+- **[Thinking Capture](docs/thinking-capture.md)** - View Claude's reasoning
 - **[Claude Code Plugin](.claude-plugin/README.md)** - Native integration
 
 ## Advanced Usage
@@ -588,6 +596,6 @@ MIT - see [LICENSE](LICENSE) and [TERMS.md](TERMS.md)
 
 ---
 
-**Sugar v3.0.0** - Autonomous development powered by Claude Agent SDK
+**Sugar v3.4** - Autonomous development powered by Claude Agent SDK
 
 > ⚠️ Sugar is provided "AS IS" without warranty. Review all AI-generated code before use. See [TERMS.md](TERMS.md) for details.

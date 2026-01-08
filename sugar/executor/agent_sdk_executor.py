@@ -7,8 +7,11 @@ Claude Agent SDK integration, providing:
 - Hook-based quality gates
 - MCP server support
 - Observable execution
+- Dynamic model routing by task complexity (AUTO-001)
+- Real-time thinking capture for visibility into Claude's reasoning
 """
 
+import os
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -21,6 +24,14 @@ from ..profiles import IssueResponderProfile
 from ..config import IssueResponderConfig
 from ..integrations import GitHubClient
 from ..ralph import RalphWiggumProfile, RalphConfig
+from ..ralph.signals import (
+    CompletionSignal,
+    CompletionSignalDetector,
+    CompletionType,
+)
+from ..orchestration.model_router import ModelRouter, ModelSelection
+from .thinking_display import ThinkingCapture
+from .hooks import HookExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +50,8 @@ class AgentSDKExecutor(BaseExecutor):
 
         Args:
             config: Configuration dictionary containing:
-                - model: Claude model to use
+                - model: Claude model to use (default, can be overridden by routing)
+                - models: Model tier configuration (simple, standard, complex)
                 - timeout: Execution timeout in seconds
                 - permission_mode: SDK permission mode
                 - quality_gates: Quality gates configuration
@@ -49,9 +61,15 @@ class AgentSDKExecutor(BaseExecutor):
         super().__init__(config)
 
         # Agent configuration
-        self.model = config.get("model", "claude-sonnet-4-20250514")
+        self.default_model = config.get("model", "claude-sonnet-4-20250514")
+        self.model = self.default_model  # Current model (may be overridden per task)
         self.timeout = config.get("timeout", 300)
         self.permission_mode = config.get("permission_mode", "acceptEdits")
+
+        # Model routing (AUTO-001)
+        models_config = config.get("models", {})
+        self.dynamic_routing_enabled = models_config.get("dynamic_routing", True)
+        self._model_router = ModelRouter(config)
 
         # Quality gates
         self.quality_gates_config = config.get("quality_gates", {})
@@ -71,30 +89,209 @@ class AgentSDKExecutor(BaseExecutor):
         # Agent instance (lazy initialization)
         self._agent: Optional[SugarAgent] = None
         self._session_active = False
+        self._current_model: Optional[str] = None  # Track model for current session
 
-        logger.debug(f"AgentSDKExecutor initialized with model: {self.model}")
+        # Completion signal detector for all executions
+        self._signal_detector = CompletionSignalDetector()
+
+        # Thinking capture
+        self.thinking_capture_enabled = config.get("thinking_capture", True)
+
+        logger.debug(
+            f"AgentSDKExecutor initialized with default model: {self.default_model}"
+        )
+        logger.debug(f"Dynamic model routing enabled: {self.dynamic_routing_enabled}")
         logger.debug(f"Quality gates enabled: {self.quality_gates_enabled}")
+        logger.debug(f"Thinking capture enabled: {self.thinking_capture_enabled}")
+        # Hook executor for pre/post task hooks
+        project_dir = config.get("project_dir", os.getcwd())
+        self._hook_executor = HookExecutor(project_dir)
+        self.hooks_enabled = config.get("hooks_enabled", True)
         logger.debug(f"Dry run mode: {self.dry_run}")
 
-    def _create_agent_config(self) -> SugarAgentConfig:
+    def _create_agent_config(
+        self,
+        model: Optional[str] = None,
+        allowed_tools: Optional[List[str]] = None,
+        disallowed_tools: Optional[List[str]] = None,
+    ) -> SugarAgentConfig:
         """Create agent configuration from executor config"""
         return SugarAgentConfig(
-            model=self.model,
+            model=model or self.model,
             permission_mode=self.permission_mode,
             mcp_servers=self.mcp_servers,
             quality_gates_enabled=self.quality_gates_enabled,
             timeout=self.timeout,
+            allowed_tools=allowed_tools or self.config.get("allowed_tools", []),
+            disallowed_tools=disallowed_tools
+            or self.config.get("disallowed_tools", []),
         )
 
-    async def _get_agent(self) -> SugarAgent:
-        """Get or create the agent instance"""
+    def _get_tool_restrictions(
+        self, task_type_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Optional[List[str]]]:
+        """
+        Extract tool restrictions from task type information.
+
+        Args:
+            task_type_info: Optional task type information from database
+
+        Returns:
+            Dictionary with 'allowed_tools' and 'disallowed_tools' keys
+        """
+        if not task_type_info:
+            return {"allowed_tools": None, "disallowed_tools": None}
+
+        return {
+            "allowed_tools": task_type_info.get("allowed_tools"),
+            "disallowed_tools": task_type_info.get("disallowed_tools"),
+        }
+
+    def select_model_for_task(
+        self,
+        work_item: Dict[str, Any],
+        task_type_info: Optional[Dict[str, Any]] = None,
+    ) -> ModelSelection:
+        """
+        Select the appropriate model for a task using the ModelRouter.
+
+        Args:
+            work_item: Work item dictionary
+            task_type_info: Optional task type information from database
+
+        Returns:
+            ModelSelection with chosen model and reasoning
+        """
+        if not self.dynamic_routing_enabled:
+            # Return default model when routing is disabled
+            from ..orchestration.model_router import ModelTier
+
+            return ModelSelection(
+                model=self.default_model,
+                tier=ModelTier.STANDARD,
+                reason="Dynamic routing disabled, using default model",
+                task_type=work_item.get("type"),
+                complexity_level=3,
+                override_applied=False,
+            )
+
+        return self._model_router.route(work_item, task_type_info)
+
+    async def _get_agent(
+        self,
+        model: Optional[str] = None,
+        tool_restrictions: Optional[Dict[str, Optional[List[str]]]] = None,
+        bash_permissions: Optional[List[str]] = None,
+    ) -> SugarAgent:
+        """Get or create the agent instance, optionally with a specific model, tool restrictions, and bash permissions"""
+        target_model = model or self.model
+
+        # If we need a different model than current, recreate the agent
+        if self._agent is not None and self._current_model != target_model:
+            if self._session_active:
+                await self._agent.end_session()
+                self._session_active = False
+            self._agent = None
+
+        # If tool restrictions or bash permissions are specified, always create a new agent
+        # (these are per-task, not per-session)
+        needs_custom_agent = (
+            tool_restrictions
+            and (
+                tool_restrictions.get("allowed_tools")
+                or tool_restrictions.get("disallowed_tools")
+            )
+        ) or bash_permissions is not None
+
+        if needs_custom_agent:
+            if self._agent is not None and self._session_active:
+                await self._agent.end_session()
+                self._session_active = False
+
+            agent_config = self._create_agent_config(
+                model=target_model,
+                allowed_tools=(
+                    tool_restrictions.get("allowed_tools")
+                    if tool_restrictions
+                    else None
+                ),
+                disallowed_tools=(
+                    tool_restrictions.get("disallowed_tools")
+                    if tool_restrictions
+                    else None
+                ),
+            )
+            # Create a new agent with tool restrictions and bash permissions
+            return SugarAgent(
+                config=agent_config,
+                quality_gates_config=self.quality_gates_config,
+                bash_permissions=bash_permissions,
+            )
+
         if self._agent is None:
-            agent_config = self._create_agent_config()
+            agent_config = self._create_agent_config(model=target_model)
             self._agent = SugarAgent(
                 config=agent_config,
                 quality_gates_config=self.quality_gates_config,
             )
+            self._current_model = target_model
+            logger.debug(f"Created new agent instance with model: {target_model}")
+
         return self._agent
+
+    def detect_completion_signal(self, content: str) -> CompletionSignal:
+        """
+        Detect completion signal in agent output.
+
+        This method detects various completion signal patterns:
+        - <promise>TEXT</promise>
+        - <complete>TEXT</complete>
+        - <done>TEXT</done>
+        - TASK_COMPLETE: description
+
+        Args:
+            content: The agent output content to check
+
+        Returns:
+            CompletionSignal with detection results
+        """
+        return self._signal_detector.detect(content)
+
+    def _enhance_result_with_completion_signal(
+        self, result: Dict[str, Any], content: str
+    ) -> Dict[str, Any]:
+        """
+        Enhance execution result with completion signal information.
+
+        Adds completion signal detection to any execution result,
+        allowing consistent signal handling across all execution types.
+
+        Args:
+            result: The execution result dictionary
+            content: The agent output content
+
+        Returns:
+            Enhanced result with completion signal info
+        """
+        signal = self.detect_completion_signal(content)
+
+        if signal.detected:
+            result["completion_signal"] = signal.to_dict()
+            result["completion_detected"] = True
+            result["completion_type"] = (
+                signal.signal_type.name if signal.signal_type else None
+            )
+            result["completion_text"] = signal.signal_text
+
+            logger.debug(
+                f"Completion signal detected: type={signal.signal_type.name}, "
+                f"text='{signal.signal_text[:50] if signal.signal_text else ''}...'"
+            )
+        else:
+            result["completion_signal"] = None
+            result["completion_detected"] = False
+
+        return result
 
     async def _execute_issue_response(self, work_item: Dict) -> Dict:
         """Execute an issue response task using IssueResponderProfile"""
@@ -289,12 +486,18 @@ class AgentSDKExecutor(BaseExecutor):
             "iteration_results": iteration_results,
         }
 
-    async def execute_work(self, work_item: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_work(
+        self,
+        work_item: Dict[str, Any],
+        task_type_info: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Execute a work item using the Claude Agent SDK.
 
         Args:
             work_item: Work item dictionary
+            task_type_info: Optional task type information from database
+                           (includes model_tier and complexity_level)
 
         Returns:
             Result dictionary compatible with Sugar's workflow
@@ -315,23 +518,137 @@ class AgentSDKExecutor(BaseExecutor):
             logger.info(f"DRY RUN: Simulating execution of {work_item.get('title')}")
             return await self._simulate_execution(work_item)
 
+        # Select model based on task complexity (AUTO-001)
+        model_selection = self.select_model_for_task(work_item, task_type_info)
+        selected_model = model_selection.model
+
+        logger.info(
+            f"Model routing: {model_selection.tier.value} tier -> {selected_model} "
+            f"(reason: {model_selection.reason})"
+        )
+
+        # Apply tool restrictions from task type if provided
+        tool_restrictions = self._get_tool_restrictions(task_type_info)
+        if tool_restrictions.get("allowed_tools") or tool_restrictions.get(
+            "disallowed_tools"
+        ):
+            logger.info(
+                f"Tool restrictions: allowed={tool_restrictions.get('allowed_tools')}, "
+                f"disallowed={tool_restrictions.get('disallowed_tools')}"
+            )
+
+        # Apply bash permissions from task type if provided
+        bash_permissions = (
+            task_type_info.get("bash_permissions", []) if task_type_info else []
+        )
+        if bash_permissions:
+            logger.info(
+                f"Bash permissions configured: {len(bash_permissions)} patterns"
+            )
+            logger.debug(f"Bash permission patterns: {bash_permissions}")
+
+        # Extract hooks from task_type_info
+        pre_hooks = []
+        post_hooks = []
+        if task_type_info and self.hooks_enabled:
+            pre_hooks = task_type_info.get("pre_hooks", [])
+            post_hooks = task_type_info.get("post_hooks", [])
+
+            # Execute pre-hooks
+            if pre_hooks:
+                logger.info(
+                    f"Executing {len(pre_hooks)} pre-hooks for task {work_item.get('id')}"
+                )
+                hook_result = await self._hook_executor.execute_hooks(
+                    pre_hooks, "pre_hooks", work_item
+                )
+
+                if not hook_result["success"]:
+                    logger.error(f"Pre-hook failed: {hook_result.get('failed_hook')}")
+                    return {
+                        "success": False,
+                        "error": f"Pre-hook failed: {hook_result.get('failed_hook')}",
+                        "hook_result": hook_result,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "work_item_id": work_item.get("id"),
+                        "executor": "agent_sdk",
+                        "output": "",
+                        "files_changed": [],
+                        "actions_taken": [],
+                        "summary": "Task cancelled due to pre-hook failure",
+                    }
+
         start_time = datetime.now(timezone.utc)
 
+        # Setup thinking capture if enabled
+        thinking_capture = None
+        if self.thinking_capture_enabled:
+            thinking_capture = ThinkingCapture(
+                task_id=work_item.get("id", "unknown"),
+                task_title=work_item.get("title", ""),
+            )
+
         try:
-            agent = await self._get_agent()
+            # Get agent with the selected model, tool restrictions, and bash permissions
+            agent = await self._get_agent(
+                model=selected_model,
+                tool_restrictions=tool_restrictions,
+                bash_permissions=bash_permissions,
+            )
+
+            # Attach thinking capture to agent if enabled
+            if thinking_capture:
+                agent.set_thinking_capture(thinking_capture)
+
             result = await agent.execute_work_item(work_item)
 
             execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
 
             # Enhance result with executor metadata
             result["executor"] = "agent_sdk"
-            result["model"] = self.model
+            result["model"] = selected_model
+            result["model_tier"] = model_selection.tier.value
+            result["model_routing_reason"] = model_selection.reason
             result["execution_time"] = execution_time
 
+            # Add thinking capture metadata if enabled
+            if thinking_capture:
+                result["thinking_summary"] = thinking_capture.get_summary()
+                result["thinking_log_path"] = thinking_capture.get_thinking_log_path()
+                result["thinking_stats"] = thinking_capture.get_stats()
+
+            # Detect completion signals in all executions
+            content = result.get("content", result.get("output", ""))
+            if content:
+                result = self._enhance_result_with_completion_signal(result, content)
+
             logger.info(
-                f"Task completed in {execution_time:.2f}s: "
+                f"Task completed in {execution_time:.2f}s using {selected_model}: "
                 f"{work_item.get('title', 'unknown')}"
             )
+
+            # Execute post-hooks
+            if post_hooks and self.hooks_enabled:
+                logger.info(
+                    f"Executing {len(post_hooks)} post-hooks for task {work_item.get('id')}"
+                )
+                hook_result = await self._hook_executor.execute_hooks(
+                    post_hooks, "post_hooks", work_item
+                )
+
+                result["post_hook_result"] = hook_result
+
+                if not hook_result["success"]:
+                    logger.warning(
+                        f"Post-hook failed: {hook_result.get('failed_hook')}"
+                    )
+                    result["post_hook_failed"] = True
+                    result["post_hook_error"] = hook_result.get("failed_hook")
+                    # Mark for review but don't fail the task
+                    result["needs_review"] = True
+                    result["review_reason"] = "Post-hook validation failed"
+                else:
+                    result["post_hook_failed"] = False
 
             return result
 
@@ -346,10 +663,14 @@ class AgentSDKExecutor(BaseExecutor):
                 "work_item_id": work_item.get("id"),
                 "execution_time": execution_time,
                 "executor": "agent_sdk",
+                "model": selected_model,
+                "model_tier": model_selection.tier.value,
                 "output": "",
                 "files_changed": [],
                 "actions_taken": [],
                 "summary": f"Execution failed: {e}",
+                "completion_signal": None,
+                "completion_detected": False,
             }
 
     async def validate(self) -> bool:
@@ -430,6 +751,14 @@ class AgentSDKExecutor(BaseExecutor):
         if self._agent:
             return self._agent.get_execution_history()
         return []
+
+    def get_model_router(self) -> ModelRouter:
+        """Get the model router instance for external access"""
+        return self._model_router
+
+    def get_available_models(self) -> Dict[str, str]:
+        """Get all configured model mappings"""
+        return self._model_router.get_available_models()
 
     async def __aenter__(self) -> "AgentSDKExecutor":
         """Async context manager entry"""

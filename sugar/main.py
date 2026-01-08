@@ -329,6 +329,12 @@ def init(project_dir):
     is_flag=True,
     help="Enable intelligent triage (auto-detect Ralph mode and completion criteria)",
 )
+@click.option(
+    "--acceptance-criteria",
+    type=str,
+    default=None,
+    help="JSON string or @file path with acceptance criteria for task completion",
+)
 @click.pass_context
 def add(
     ctx,
@@ -347,6 +353,7 @@ def add(
     max_iterations,
     completion_promise,
     triage,
+    acceptance_criteria,
 ):
     """Add a new task to Sugar work queue
 
@@ -485,6 +492,41 @@ def add(
             if "id" not in task_data or not task_data["id"]:
                 task_data["id"] = str(uuid.uuid4())
 
+        # Process acceptance criteria if provided
+        if acceptance_criteria:
+            try:
+                from .quality_gates.criteria_templates import CriteriaTemplates
+
+                # Check if it's a file reference (starts with @)
+                if acceptance_criteria.startswith("@"):
+                    criteria_file = acceptance_criteria[1:]
+                    with open(criteria_file, "r") as f:
+                        parsed_criteria = json.load(f)
+                else:
+                    parsed_criteria = json.loads(acceptance_criteria)
+
+                # Validate the criteria
+                is_valid, errors = CriteriaTemplates.validate_criteria_list(
+                    parsed_criteria
+                )
+                if not is_valid:
+                    click.echo("❌ Invalid acceptance criteria:", err=True)
+                    for error in errors[:3]:
+                        click.echo(f"  - {error}", err=True)
+                    raise click.Abort()
+
+                task_data["acceptance_criteria"] = parsed_criteria
+
+            except json.JSONDecodeError as e:
+                click.echo(f"❌ Invalid JSON in acceptance criteria: {e}", err=True)
+                raise click.Abort()
+            except FileNotFoundError:
+                click.echo(
+                    f"❌ Acceptance criteria file not found: {acceptance_criteria[1:]}",
+                    err=True,
+                )
+                raise click.Abort()
+
         # Perform intelligent triage if enabled
         triage_info = ""
         if triage and not ralph:  # Triage recommends Ralph mode if needed
@@ -536,8 +578,13 @@ def add(
             max_iter = task_data["context"].get("max_iterations", 10)
             ralph_mode = f" [Ralph: max {max_iter} iterations]"
 
+        criteria_info = ""
+        if task_data.get("acceptance_criteria"):
+            criteria_count = len(task_data["acceptance_criteria"])
+            criteria_info = f" [Acceptance: {criteria_count} criteria]"
+
         click.echo(
-            f"✅ Added {task_data.get('type', task_type)} task: '{task_data.get('title', title)}' ({urgency}){input_method}{ralph_mode}{triage_info}"
+            f"✅ Added {task_data.get('type', task_type)} task: '{task_data.get('title', title)}' ({urgency}){input_method}{ralph_mode}{triage_info}{criteria_info}"
         )
 
     except Exception as e:
@@ -1377,6 +1424,272 @@ def logs(ctx, lines, follow, level):
 
     except Exception as e:
         click.echo(f"❌ Error reading logs: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("task_id", required=False)
+@click.option(
+    "--list", "-l", "list_logs", is_flag=True, help="List all available thinking logs"
+)
+@click.option("--stats", "-s", is_flag=True, help="Show thinking statistics")
+@click.pass_context
+def thinking(ctx, task_id, list_logs, stats):
+    """View Claude's thinking logs for task execution.
+
+    Display the thinking blocks captured during autonomous task execution,
+    providing visibility into Claude's reasoning process.
+
+    \b
+    Examples:
+        sugar thinking TASK_ID           # View full thinking log
+        sugar thinking TASK_ID --stats   # View thinking statistics
+        sugar thinking --list            # List all thinking logs
+    """
+    from .executor.thinking_display import read_thinking_log, list_thinking_logs
+    from .storage.work_queue import WorkQueue
+    import yaml
+
+    if list_logs:
+        # List all available thinking logs
+        logs = list_thinking_logs()
+
+        if not logs:
+            click.echo("📊 No thinking logs found")
+            click.echo(
+                "\nThinking logs are generated when tasks are executed with thinking capture enabled."
+            )
+            return
+
+        click.echo(f"📊 Found {len(logs)} thinking log(s):\n")
+        for task_id_log, log_path, modified_time in logs[:20]:  # Show max 20
+            click.echo(f"  {task_id_log}")
+            click.echo(f"    Path: {log_path}")
+            click.echo(f"    Modified: {modified_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            click.echo()
+
+        if len(logs) > 20:
+            click.echo(f"  ... and {len(logs) - 20} more")
+
+        return
+
+    if not task_id:
+        click.echo("❌ Please provide a task ID or use --list to see all logs")
+        click.echo("\nUsage: sugar thinking TASK_ID")
+        sys.exit(1)
+
+    try:
+        config_file = ctx.obj["config"]
+        with open(config_file, "r") as f:
+            config = yaml.safe_load(f)
+
+        db_path = config["sugar"]["storage"]["database"]
+
+        # Get task info
+        async def get_task():
+            queue = WorkQueue(db_path)
+            await queue.initialize()
+            return await queue.get_work_by_id(task_id)
+
+        task = asyncio.run(get_task())
+
+        if not task:
+            click.echo(f"❌ Task not found: {task_id}")
+            sys.exit(1)
+
+        if stats:
+            # Show thinking statistics
+            thinking_stats = task.get("thinking_stats")
+            if thinking_stats and isinstance(thinking_stats, str):
+                thinking_stats = json.loads(thinking_stats)
+
+            if not thinking_stats:
+                click.echo(
+                    f"📊 No thinking statistics available for task: {task['title']}"
+                )
+                click.echo(
+                    "\nThis task may not have been executed yet or thinking capture was disabled."
+                )
+                return
+
+            click.echo(f"📊 Thinking Statistics for: {task['title']}")
+            click.echo(f"Task ID: {task_id}")
+            click.echo("=" * 60)
+            click.echo()
+            click.echo(f"  Thinking Blocks: {thinking_stats.get('count', 0)}")
+            click.echo(
+                f"  Total Characters: {thinking_stats.get('total_characters', 0):,}"
+            )
+            click.echo(
+                f"  Average Length: {thinking_stats.get('average_length', 0)} chars"
+            )
+
+            if thinking_stats.get("tool_uses_considered"):
+                click.echo(
+                    f"  Tools Considered: {', '.join(thinking_stats['tool_uses_considered'])}"
+                )
+
+            if thinking_stats.get("first_thinking"):
+                click.echo(f"  First Thinking: {thinking_stats['first_thinking']}")
+            if thinking_stats.get("last_thinking"):
+                click.echo(f"  Last Thinking: {thinking_stats['last_thinking']}")
+
+            click.echo()
+            if task.get("thinking_log_path"):
+                click.echo(f"  Full log: {task['thinking_log_path']}")
+
+        else:
+            # Read and display thinking log
+            thinking_content = read_thinking_log(task_id)
+
+            if not thinking_content:
+                click.echo(f"📊 No thinking log found for task: {task['title']}")
+                click.echo(f"Task ID: {task_id}")
+                click.echo()
+
+                if task.get("thinking_summary"):
+                    click.echo(f"Summary: {task['thinking_summary']}")
+                else:
+                    click.echo(
+                        "This task may not have been executed yet or thinking capture was disabled."
+                    )
+
+                return
+
+            click.echo(f"📊 Thinking Log for: {task['title']}")
+            click.echo(f"Task ID: {task_id}")
+            click.echo("=" * 60)
+            click.echo()
+            click.echo(thinking_content)
+
+    except FileNotFoundError:
+        click.echo(f"❌ Configuration file not found: {ctx.obj['config']}")
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"❌ Error reading thinking log: {e}", err=True)
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--lines",
+    "-n",
+    default=None,
+    type=int,
+    help="Number of lines to show (default: all)",
+)
+@click.option(
+    "--sessions", "-s", default=None, type=int, help="Show last N session summaries"
+)
+@click.option("--clear", is_flag=True, help="Clear the learnings log (creates backup)")
+@click.option("--refresh", is_flag=True, help="Generate fresh insights and save to log")
+@click.pass_context
+def learnings(ctx, lines, sessions, clear, refresh):
+    """View Sugar learning insights and progress log
+
+    Shows the contents of .sugar/LEARNINGS.md which contains:
+    - Session summaries with performance metrics
+    - Success/failure patterns
+    - Recommendations for system improvement
+
+    Examples:
+        sugar learnings              # Show full learnings log
+        sugar learnings -n 100       # Show last 100 lines
+        sugar learnings -s 5         # Show last 5 session summaries
+        sugar learnings --refresh    # Generate new insights and save
+        sugar learnings --clear      # Clear log (creates backup)
+    """
+    from .learning.learnings_writer import LearningsWriter
+    from .learning.feedback_processor import FeedbackProcessor
+    from .storage.work_queue import WorkQueue
+    import yaml
+
+    try:
+        config_file = ctx.obj["config"]
+        with open(config_file, "r") as f:
+            config = yaml.safe_load(f)
+
+        sugar_dir = Path(config_file).parent
+        learnings_writer = LearningsWriter(str(sugar_dir))
+
+        if clear:
+            # Clear learnings with backup
+            click.echo("🗑️ Clearing learnings log...")
+            success = learnings_writer.clear_learnings(backup=True)
+            if success:
+                click.echo("✅ Learnings log cleared (backup created)")
+            else:
+                click.echo("❌ Failed to clear learnings log", err=True)
+                sys.exit(1)
+            return
+
+        if refresh:
+            # Generate fresh insights and save
+            click.echo("🔄 Generating fresh insights...")
+            work_queue = WorkQueue(config["sugar"]["storage"]["database"])
+
+            async def _refresh_insights():
+                await work_queue.initialize()
+                processor = FeedbackProcessor(work_queue, str(sugar_dir))
+                insights = await processor.process_feedback()
+                if insights:
+                    success = await processor.save_insights_to_log()
+                    return success, insights
+                return False, {}
+
+            success, insights = asyncio.run(_refresh_insights())
+
+            if success:
+                metrics = insights.get("performance_metrics", {})
+                click.echo(f"✅ Insights saved to .sugar/LEARNINGS.md")
+                click.echo(
+                    f"   Tasks processed: {metrics.get('total_tasks_processed', 0)}"
+                )
+                click.echo(
+                    f"   Success rate: {metrics.get('success_rate_percent', 0):.1f}%"
+                )
+                recommendations = insights.get("recommendations", [])
+                click.echo(f"   Recommendations: {len(recommendations)}")
+            else:
+                click.echo(
+                    "❌ No insights to save (process some tasks first)", err=True
+                )
+            return
+
+        if sessions:
+            # Show recent session summaries
+            recent = learnings_writer.get_recent_sessions(sessions)
+            if not recent:
+                click.echo(
+                    "📭 No session summaries found. Run 'sugar learnings --refresh' to generate."
+                )
+                return
+
+            click.echo(f"\n📊 Last {len(recent)} Session Summaries\n")
+            click.echo("=" * 60)
+            for session in recent:
+                click.echo(session["content"])
+                click.echo("-" * 60)
+            return
+
+        # Default: show learnings content
+        content = learnings_writer.get_learnings(lines)
+        if content:
+            click.echo(content)
+        else:
+            click.echo("📭 No learnings recorded yet.")
+            click.echo(
+                "   Run 'sugar learnings --refresh' to generate insights from task history."
+            )
+
+    except FileNotFoundError:
+        click.echo("❌ Sugar not initialized. Run 'sugar init' first.", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"❌ Error reading learnings: {e}", err=True)
         sys.exit(1)
 
 
