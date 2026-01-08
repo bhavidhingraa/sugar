@@ -360,9 +360,7 @@ class WorkQueue:
                 logger.info("Added thinking_stats column to existing database")
 
         except Exception as e:
-            logger.warning(
-                f"Thinking columns migration warning (non-critical): {e}"
-            )
+            logger.warning(f"Thinking columns migration warning (non-critical): {e}")
 
     async def close(self):
         """Close the work queue (for testing)"""
@@ -548,7 +546,14 @@ class WorkQueue:
                     thinking_stats = ?
                 WHERE id = ?
             """,
-                (json.dumps(result), execution_time, thinking_log_path, thinking_summary, thinking_stats_json, work_id),
+                (
+                    json.dumps(result),
+                    execution_time,
+                    thinking_log_path,
+                    thinking_summary,
+                    thinking_stats_json,
+                    work_id,
+                ),
             )
 
             await db.commit()

@@ -95,8 +95,18 @@ class TestTaskTypeManager:
 
         # Check specific defaults exist
         type_ids = [t["id"] for t in task_types]
-        expected_defaults = ["bug_fix", "feature", "test", "refactor", "docs",
-                           "chore", "style", "perf", "ci", "security"]
+        expected_defaults = [
+            "bug_fix",
+            "feature",
+            "test",
+            "refactor",
+            "docs",
+            "chore",
+            "style",
+            "perf",
+            "ci",
+            "security",
+        ]
         assert all(default in type_ids for default in expected_defaults)
 
         # Check they're marked as default (SQLite returns 1 for True)
@@ -737,7 +747,13 @@ class TestTaskTypeToolRestrictions:
     async def test_get_tool_restrictions(self, task_type_manager):
         """Test getting tool restrictions for a task type"""
         restrictions = await task_type_manager.get_tool_restrictions_for_type("docs")
-        assert restrictions["allowed_tools"] == ["Read", "Write", "Edit", "Glob", "Grep"]
+        assert restrictions["allowed_tools"] == [
+            "Read",
+            "Write",
+            "Edit",
+            "Glob",
+            "Grep",
+        ]
         assert restrictions["disallowed_tools"] is None
 
         restrictions = await task_type_manager.get_tool_restrictions_for_type("feature")
@@ -825,8 +841,18 @@ class TestTaskTypeMigration:
 
         # Check expected defaults are present
         type_ids = {t["id"] for t in task_types}
-        expected_defaults = {"bug_fix", "feature", "test", "refactor", "docs",
-                           "chore", "style", "perf", "ci", "security"}
+        expected_defaults = {
+            "bug_fix",
+            "feature",
+            "test",
+            "refactor",
+            "docs",
+            "chore",
+            "style",
+            "perf",
+            "ci",
+            "security",
+        }
         assert expected_defaults.issubset(type_ids)
 
     def test_migration_is_idempotent(self, temp_sugar_env):

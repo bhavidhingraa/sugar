@@ -241,12 +241,10 @@ class TaskTypeManager:
             "docs": simple_restrictions,
             "style": simple_restrictions,
             "chore": simple_restrictions,
-
             # Standard tier - most tools except web search
             "test": standard_restrictions,
             "bug_fix": standard_restrictions,
             "ci": standard_restrictions,
-
             # Complex tier - full tool access
             "feature": complex_restrictions,
             "refactor": complex_restrictions,
@@ -256,8 +254,16 @@ class TaskTypeManager:
 
         for type_id, restrictions in restriction_map.items():
             try:
-                allowed_json = json.dumps(restrictions["allowed_tools"]) if restrictions["allowed_tools"] else None
-                disallowed_json = json.dumps(restrictions["disallowed_tools"]) if restrictions["disallowed_tools"] else None
+                allowed_json = (
+                    json.dumps(restrictions["allowed_tools"])
+                    if restrictions["allowed_tools"]
+                    else None
+                )
+                disallowed_json = (
+                    json.dumps(restrictions["disallowed_tools"])
+                    if restrictions["disallowed_tools"]
+                    else None
+                )
 
                 await db.execute(
                     "UPDATE task_types SET allowed_tools = ?, disallowed_tools = ? WHERE id = ?",
@@ -370,32 +376,20 @@ class TaskTypeManager:
         """Set default hooks for built-in task types"""
         default_hooks = {
             # Bug fixes should run tests after completion
-            "bug_fix": {
-                "pre_hooks": [],
-                "post_hooks": ["pytest tests/ -x --tb=short"]
-            },
+            "bug_fix": {"pre_hooks": [], "post_hooks": ["pytest tests/ -x --tb=short"]},
             # Features should run tests and check formatting
             "feature": {
                 "pre_hooks": [],
-                "post_hooks": [
-                    "pytest tests/ -x --tb=short",
-                    "black --check ."
-                ]
+                "post_hooks": ["pytest tests/ -x --tb=short", "black --check ."],
             },
             # Tests should run the test suite
-            "test": {
-                "pre_hooks": [],
-                "post_hooks": ["pytest tests/ -v"]
-            },
+            "test": {"pre_hooks": [], "post_hooks": ["pytest tests/ -v"]},
             # Style tasks should check formatting
-            "style": {
-                "pre_hooks": [],
-                "post_hooks": ["black --check ."]
-            },
+            "style": {"pre_hooks": [], "post_hooks": ["black --check ."]},
             # Refactoring should run tests
             "refactor": {
                 "pre_hooks": [],
-                "post_hooks": ["pytest tests/ -x --tb=short"]
+                "post_hooks": ["pytest tests/ -x --tb=short"],
             },
         }
 
@@ -406,14 +400,13 @@ class TaskTypeManager:
                     (
                         json.dumps(hooks.get("pre_hooks", [])),
                         json.dumps(hooks.get("post_hooks", [])),
-                        type_id
+                        type_id,
                     ),
                 )
             except Exception as e:
                 logger.debug(f"Could not update hooks for {type_id}: {e}")
 
         await db.commit()
-
 
     def _get_default_task_types(self) -> List[Dict]:
         """Get the default task types"""
@@ -683,9 +676,7 @@ class TaskTypeManager:
                 # Parse JSON pre_hooks
                 if task_type.get("pre_hooks"):
                     try:
-                        task_type["pre_hooks"] = json.loads(
-                            task_type["pre_hooks"]
-                        )
+                        task_type["pre_hooks"] = json.loads(task_type["pre_hooks"])
                     except json.JSONDecodeError:
                         task_type["pre_hooks"] = []
                 else:
@@ -693,9 +684,7 @@ class TaskTypeManager:
                 # Parse JSON post_hooks
                 if task_type.get("post_hooks"):
                     try:
-                        task_type["post_hooks"] = json.loads(
-                            task_type["post_hooks"]
-                        )
+                        task_type["post_hooks"] = json.loads(task_type["post_hooks"])
                     except json.JSONDecodeError:
                         task_type["post_hooks"] = []
                 else:
@@ -771,12 +760,10 @@ class TaskTypeManager:
                         )
                     except json.JSONDecodeError:
                         task_type["disallowed_tools"] = None
-                                # Parse JSON pre_hooks
+                        # Parse JSON pre_hooks
                 if task_type.get("pre_hooks"):
                     try:
-                        task_type["pre_hooks"] = json.loads(
-                            task_type["pre_hooks"]
-                        )
+                        task_type["pre_hooks"] = json.loads(task_type["pre_hooks"])
                     except json.JSONDecodeError:
                         task_type["pre_hooks"] = []
                 else:
@@ -784,9 +771,7 @@ class TaskTypeManager:
                 # Parse JSON post_hooks
                 if task_type.get("post_hooks"):
                     try:
-                        task_type["post_hooks"] = json.loads(
-                            task_type["post_hooks"]
-                        )
+                        task_type["post_hooks"] = json.loads(task_type["post_hooks"])
                     except json.JSONDecodeError:
                         task_type["post_hooks"] = []
                 else:
@@ -1208,7 +1193,7 @@ class TaskTypeManager:
         task_type = await self.get_task_type(type_id)
         if not task_type:
             return []
-        
+
         hooks = task_type.get("pre_hooks", "[]")
         if isinstance(hooks, str):
             try:
@@ -1223,7 +1208,7 @@ class TaskTypeManager:
         task_type = await self.get_task_type(type_id)
         if not task_type:
             return []
-        
+
         hooks = task_type.get("post_hooks", "[]")
         if isinstance(hooks, str):
             try:
@@ -1236,47 +1221,47 @@ class TaskTypeManager:
         self,
         type_id: str,
         pre_hooks: Optional[List[str]] = None,
-        post_hooks: Optional[List[str]] = None
+        post_hooks: Optional[List[str]] = None,
     ) -> bool:
         """Set pre and/or post hooks for a task type"""
         updates = {}
-        
+
         if pre_hooks is not None:
             updates["pre_hooks"] = pre_hooks
         if post_hooks is not None:
             updates["post_hooks"] = post_hooks
-        
+
         if not updates:
             logger.warning(f"No hooks provided for task type '{type_id}'")
             return False
-        
+
         # Convert to JSON for storage
         if "pre_hooks" in updates:
             updates["pre_hooks"] = json.dumps(updates["pre_hooks"])
         if "post_hooks" in updates:
             updates["post_hooks"] = json.dumps(updates["post_hooks"])
-        
+
         await self.initialize()
         existing = await self.get_task_type(type_id)
         if not existing:
             logger.error(f"Task type '{type_id}' not found")
             return False
-        
+
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 update_parts = []
                 params = []
-                
+
                 if "pre_hooks" in updates:
                     update_parts.append("pre_hooks = ?")
                     params.append(updates["pre_hooks"])
                 if "post_hooks" in updates:
                     update_parts.append("post_hooks = ?")
                     params.append(updates["post_hooks"])
-                
+
                 update_parts.append("updated_at = CURRENT_TIMESTAMP")
                 params.append(type_id)
-                
+
                 await db.execute(
                     f"UPDATE task_types SET {', '.join(update_parts)} WHERE id = ?",
                     params,

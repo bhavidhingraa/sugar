@@ -80,7 +80,10 @@ class TestThinkingCapture:
         )
 
         assert len(capture.thinking_blocks) == 1
-        assert capture.thinking_blocks[0].content == "This is my reasoning about the problem"
+        assert (
+            capture.thinking_blocks[0].content
+            == "This is my reasoning about the problem"
+        )
         assert capture.thinking_blocks[0].tool_use == "Read"
 
     def test_capture_multiple_blocks(self, temp_dir):

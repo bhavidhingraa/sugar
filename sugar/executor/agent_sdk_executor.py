@@ -123,7 +123,8 @@ class AgentSDKExecutor(BaseExecutor):
             quality_gates_enabled=self.quality_gates_enabled,
             timeout=self.timeout,
             allowed_tools=allowed_tools or self.config.get("allowed_tools", []),
-            disallowed_tools=disallowed_tools or self.config.get("disallowed_tools", []),
+            disallowed_tools=disallowed_tools
+            or self.config.get("disallowed_tools", []),
         )
 
     def _get_tool_restrictions(
@@ -195,9 +196,12 @@ class AgentSDKExecutor(BaseExecutor):
         # If tool restrictions or bash permissions are specified, always create a new agent
         # (these are per-task, not per-session)
         needs_custom_agent = (
-            (tool_restrictions and (tool_restrictions.get("allowed_tools") or tool_restrictions.get("disallowed_tools"))) or
-            bash_permissions is not None
-        )
+            tool_restrictions
+            and (
+                tool_restrictions.get("allowed_tools")
+                or tool_restrictions.get("disallowed_tools")
+            )
+        ) or bash_permissions is not None
 
         if needs_custom_agent:
             if self._agent is not None and self._session_active:
@@ -206,8 +210,16 @@ class AgentSDKExecutor(BaseExecutor):
 
             agent_config = self._create_agent_config(
                 model=target_model,
-                allowed_tools=tool_restrictions.get("allowed_tools") if tool_restrictions else None,
-                disallowed_tools=tool_restrictions.get("disallowed_tools") if tool_restrictions else None,
+                allowed_tools=(
+                    tool_restrictions.get("allowed_tools")
+                    if tool_restrictions
+                    else None
+                ),
+                disallowed_tools=(
+                    tool_restrictions.get("disallowed_tools")
+                    if tool_restrictions
+                    else None
+                ),
             )
             # Create a new agent with tool restrictions and bash permissions
             return SugarAgent(
@@ -517,16 +529,22 @@ class AgentSDKExecutor(BaseExecutor):
 
         # Apply tool restrictions from task type if provided
         tool_restrictions = self._get_tool_restrictions(task_type_info)
-        if tool_restrictions.get("allowed_tools") or tool_restrictions.get("disallowed_tools"):
+        if tool_restrictions.get("allowed_tools") or tool_restrictions.get(
+            "disallowed_tools"
+        ):
             logger.info(
                 f"Tool restrictions: allowed={tool_restrictions.get('allowed_tools')}, "
                 f"disallowed={tool_restrictions.get('disallowed_tools')}"
             )
 
         # Apply bash permissions from task type if provided
-        bash_permissions = task_type_info.get("bash_permissions", []) if task_type_info else []
+        bash_permissions = (
+            task_type_info.get("bash_permissions", []) if task_type_info else []
+        )
         if bash_permissions:
-            logger.info(f"Bash permissions configured: {len(bash_permissions)} patterns")
+            logger.info(
+                f"Bash permissions configured: {len(bash_permissions)} patterns"
+            )
             logger.debug(f"Bash permission patterns: {bash_permissions}")
 
         # Extract hooks from task_type_info
@@ -535,16 +553,16 @@ class AgentSDKExecutor(BaseExecutor):
         if task_type_info and self.hooks_enabled:
             pre_hooks = task_type_info.get("pre_hooks", [])
             post_hooks = task_type_info.get("post_hooks", [])
-            
+
             # Execute pre-hooks
             if pre_hooks:
-                logger.info(f"Executing {len(pre_hooks)} pre-hooks for task {work_item.get('id')}")
-                hook_result = await self._hook_executor.execute_hooks(
-                    pre_hooks,
-                    "pre_hooks",
-                    work_item
+                logger.info(
+                    f"Executing {len(pre_hooks)} pre-hooks for task {work_item.get('id')}"
                 )
-                
+                hook_result = await self._hook_executor.execute_hooks(
+                    pre_hooks, "pre_hooks", work_item
+                )
+
                 if not hook_result["success"]:
                     logger.error(f"Pre-hook failed: {hook_result.get('failed_hook')}")
                     return {
@@ -609,20 +627,21 @@ class AgentSDKExecutor(BaseExecutor):
                 f"{work_item.get('title', 'unknown')}"
             )
 
-
             # Execute post-hooks
             if post_hooks and self.hooks_enabled:
-                logger.info(f"Executing {len(post_hooks)} post-hooks for task {work_item.get('id')}")
-                hook_result = await self._hook_executor.execute_hooks(
-                    post_hooks,
-                    "post_hooks",
-                    work_item
+                logger.info(
+                    f"Executing {len(post_hooks)} post-hooks for task {work_item.get('id')}"
                 )
-                
+                hook_result = await self._hook_executor.execute_hooks(
+                    post_hooks, "post_hooks", work_item
+                )
+
                 result["post_hook_result"] = hook_result
-                
+
                 if not hook_result["success"]:
-                    logger.warning(f"Post-hook failed: {hook_result.get('failed_hook')}")
+                    logger.warning(
+                        f"Post-hook failed: {hook_result.get('failed_hook')}"
+                    )
                     result["post_hook_failed"] = True
                     result["post_hook_error"] = hook_result.get("failed_hook")
                     # Mark for review but don't fail the task

@@ -27,7 +27,11 @@ class QualityGateHooks:
     quality gates during agent execution.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, bash_permissions: Optional[List[str]] = None):
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        bash_permissions: Optional[List[str]] = None,
+    ):
         """
         Initialize quality gate hooks.
 

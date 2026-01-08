@@ -198,9 +198,7 @@ class ThinkingCapture:
             }
 
         total_chars = sum(len(block.content) for block in self.thinking_blocks)
-        tool_uses = [
-            block.tool_use for block in self.thinking_blocks if block.tool_use
-        ]
+        tool_uses = [block.tool_use for block in self.thinking_blocks if block.tool_use]
 
         return {
             "count": len(self.thinking_blocks),

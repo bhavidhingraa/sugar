@@ -654,6 +654,140 @@ sugar context task-abc123
 
 ---
 
+### `sugar thinking`
+
+View Claude's thinking logs for task execution, providing visibility into Claude's reasoning process.
+
+```bash
+sugar thinking [TASK_ID] [OPTIONS]
+```
+
+**Arguments:**
+- `TASK_ID` - Task ID to view thinking for (required unless using `--list`)
+
+**Options:**
+- `--list, -l` - List all available thinking logs
+- `--stats, -s` - Show thinking statistics only
+
+**Examples:**
+```bash
+# View full thinking log for a task
+sugar thinking task-abc123
+
+# View thinking statistics
+sugar thinking task-abc123 --stats
+
+# List all thinking logs
+sugar thinking --list
+```
+
+**Shows:**
+- **Full Log**: Complete thinking blocks with timestamps and tool considerations
+- **Statistics**: Count of thinking blocks, total characters, tools considered, timing
+- **List**: All available thinking logs sorted by modification time
+
+**Thinking Log Contents:**
+```markdown
+# Thinking Log: Implement user authentication
+
+**Task ID:** abc123
+**Started:** 2026-01-07T10:30:00
+
+---
+
+## 10:30:05
+
+First, I need to understand the current authentication system...
+
+---
+
+## 10:30:12
+
+*Considering tool: `Read`*
+
+I should read the existing auth module...
+
+---
+
+## Summary
+
+- **Total thinking blocks:** 15
+- **Total characters:** 3,247
+- **Average length:** 216 chars
+- **Tools considered:** Read, Write, Bash
+
+**Completed:** 2026-01-07T10:35:42
+```
+
+**Use Cases:**
+- **Debugging**: Understand why a task succeeded or failed
+- **Learning**: Study how Claude approaches problems
+- **Verification**: Confirm Claude is following expected strategies
+- **Analysis**: Track thinking patterns across tasks
+
+**Note:** Thinking capture is enabled by default. To disable, set `thinking_capture: false` in `.sugar/config.yaml`.
+
+See [Thinking Capture Guide](../thinking-capture.md) for full documentation.
+
+---
+
+### `sugar task-type`
+
+Manage custom task types for your project.
+
+```bash
+sugar task-type [COMMAND] [OPTIONS]
+```
+
+**Subcommands:**
+
+**`sugar task-type list`** - List all task types with their configurations
+
+```bash
+sugar task-type list
+```
+
+**Shows:**
+- Task type name and emoji
+- Model tier (simple/standard/complex)
+- Tool restrictions
+- Bash permissions
+- Pre/post execution hooks
+
+**`sugar task-type update`** - Update task type configuration
+
+```bash
+sugar task-type update TYPE [OPTIONS]
+```
+
+**Options:**
+- `--tier TEXT` - Model tier: simple, standard, complex
+- `--complexity INTEGER` - Complexity level (1-5)
+- `--allowed-tools TEXT` - Comma-separated list of allowed tools
+- `--disallowed-tools TEXT` - Comma-separated list of disallowed tools
+- `--bash-permissions TEXT` - Comma-separated bash permission patterns
+- `--pre-hooks TEXT` - Comma-separated pre-execution hooks
+- `--post-hooks TEXT` - Comma-separated post-execution hooks
+
+**Examples:**
+```bash
+# Change model tier for docs tasks
+sugar task-type update docs --tier simple --complexity 1
+
+# Set tool restrictions for feature tasks
+sugar task-type update feature --allowed-tools "Read,Write,Edit,Bash"
+
+# Add bash permissions for test tasks
+sugar task-type update test --bash-permissions "pytest *,python -m pytest *"
+
+# Add pre-execution hooks for bug_fix tasks
+sugar task-type update bug_fix --pre-hooks "git status,pytest tests/ --collect-only"
+```
+
+See [Task Hooks Guide](../task-hooks.md) for full documentation on hooks.
+
+---
+
 ## Task Status Lifecycle
 
 ```

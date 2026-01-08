@@ -26,11 +26,7 @@ class HookExecutor:
         logger.debug(f"HookExecutor initialized for project: {self.project_dir}")
 
     async def execute_hooks(
-        self,
-        hooks: List[str],
-        hook_type: str,
-        task: Dict[str, Any],
-        timeout: int = 300
+        self, hooks: List[str], hook_type: str, task: Dict[str, Any], timeout: int = 300
     ) -> Dict[str, Any]:
         """
         Execute a list of hook commands.
@@ -50,11 +46,7 @@ class HookExecutor:
         """
         if not hooks:
             logger.debug(f"No {hook_type} to execute")
-            return {
-                "success": True,
-                "outputs": [],
-                "errors": []
-            }
+            return {"success": True, "outputs": [], "errors": []}
 
         task_id = task.get("id", "unknown")
         logger.info(f"Executing {len(hooks)} {hook_type} for task {task_id}")
@@ -74,7 +66,7 @@ class HookExecutor:
                     cwd=str(self.project_dir),
                     capture_output=True,
                     text=True,
-                    timeout=timeout
+                    timeout=timeout,
                 )
 
                 # Log output
@@ -83,34 +75,40 @@ class HookExecutor:
                 if result.stderr:
                     logger.debug(f"Hook stderr: {result.stderr[:200]}")
 
-                outputs.append({
-                    "command": cmd,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "returncode": result.returncode
-                })
+                outputs.append(
+                    {
+                        "command": cmd,
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                        "returncode": result.returncode,
+                    }
+                )
 
                 # Check for failure
                 if result.returncode != 0:
-                    error_msg = f"{hook_type} failed: {cmd}\nExit code: {result.returncode}"
+                    error_msg = (
+                        f"{hook_type} failed: {cmd}\nExit code: {result.returncode}"
+                    )
                     if result.stderr:
                         error_msg += f"\nError: {result.stderr}"
 
                     logger.error(error_msg)
-                    errors.append({
-                        "command": cmd,
-                        "error": error_msg,
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
-                        "returncode": result.returncode
-                    })
+                    errors.append(
+                        {
+                            "command": cmd,
+                            "error": error_msg,
+                            "stdout": result.stdout,
+                            "stderr": result.stderr,
+                            "returncode": result.returncode,
+                        }
+                    )
 
                     return {
                         "success": False,
                         "failed_hook": cmd,
                         "failed_hook_index": i - 1,
                         "outputs": outputs,
-                        "errors": errors
+                        "errors": errors,
                     }
 
                 logger.debug(f"{hook_type}[{i}/{len(hooks)}] passed: {cmd}")
@@ -118,11 +116,7 @@ class HookExecutor:
             except subprocess.TimeoutExpired as e:
                 error_msg = f"{hook_type} timed out after {timeout}s: {cmd}"
                 logger.error(error_msg)
-                errors.append({
-                    "command": cmd,
-                    "error": error_msg,
-                    "timeout": timeout
-                })
+                errors.append({"command": cmd, "error": error_msg, "timeout": timeout})
 
                 return {
                     "success": False,
@@ -130,31 +124,24 @@ class HookExecutor:
                     "failed_hook_index": i - 1,
                     "outputs": outputs,
                     "errors": errors,
-                    "timeout": True
+                    "timeout": True,
                 }
 
             except Exception as e:
                 error_msg = f"{hook_type} exception: {cmd}\n{str(e)}"
                 logger.error(error_msg)
-                errors.append({
-                    "command": cmd,
-                    "error": str(e)
-                })
+                errors.append({"command": cmd, "error": str(e)})
 
                 return {
                     "success": False,
                     "failed_hook": cmd,
                     "failed_hook_index": i - 1,
                     "outputs": outputs,
-                    "errors": errors
+                    "errors": errors,
                 }
 
         logger.info(f"All {len(hooks)} {hook_type} passed for task {task_id}")
-        return {
-            "success": True,
-            "outputs": outputs,
-            "errors": []
-        }
+        return {"success": True, "outputs": outputs, "errors": []}
 
     def _substitute_variables(self, cmd: str, task: Dict[str, Any]) -> str:
         """
@@ -184,7 +171,7 @@ class HookExecutor:
             task_id=task_id,
             task_type=task_type,
             task_title=task_title,
-            task_priority=task_priority
+            task_priority=task_priority,
         )
 
         return substituted

@@ -1429,7 +1429,9 @@ def logs(ctx, lines, follow, level):
 
 @cli.command()
 @click.argument("task_id", required=False)
-@click.option("--list", "-l", "list_logs", is_flag=True, help="List all available thinking logs")
+@click.option(
+    "--list", "-l", "list_logs", is_flag=True, help="List all available thinking logs"
+)
 @click.option("--stats", "-s", is_flag=True, help="Show thinking statistics")
 @click.pass_context
 def thinking(ctx, task_id, list_logs, stats):
@@ -1454,7 +1456,9 @@ def thinking(ctx, task_id, list_logs, stats):
 
         if not logs:
             click.echo("📊 No thinking logs found")
-            click.echo("\nThinking logs are generated when tasks are executed with thinking capture enabled.")
+            click.echo(
+                "\nThinking logs are generated when tasks are executed with thinking capture enabled."
+            )
             return
 
         click.echo(f"📊 Found {len(logs)} thinking log(s):\n")
@@ -1500,8 +1504,12 @@ def thinking(ctx, task_id, list_logs, stats):
                 thinking_stats = json.loads(thinking_stats)
 
             if not thinking_stats:
-                click.echo(f"📊 No thinking statistics available for task: {task['title']}")
-                click.echo("\nThis task may not have been executed yet or thinking capture was disabled.")
+                click.echo(
+                    f"📊 No thinking statistics available for task: {task['title']}"
+                )
+                click.echo(
+                    "\nThis task may not have been executed yet or thinking capture was disabled."
+                )
                 return
 
             click.echo(f"📊 Thinking Statistics for: {task['title']}")
@@ -1509,19 +1517,25 @@ def thinking(ctx, task_id, list_logs, stats):
             click.echo("=" * 60)
             click.echo()
             click.echo(f"  Thinking Blocks: {thinking_stats.get('count', 0)}")
-            click.echo(f"  Total Characters: {thinking_stats.get('total_characters', 0):,}")
-            click.echo(f"  Average Length: {thinking_stats.get('average_length', 0)} chars")
+            click.echo(
+                f"  Total Characters: {thinking_stats.get('total_characters', 0):,}"
+            )
+            click.echo(
+                f"  Average Length: {thinking_stats.get('average_length', 0)} chars"
+            )
 
-            if thinking_stats.get('tool_uses_considered'):
-                click.echo(f"  Tools Considered: {', '.join(thinking_stats['tool_uses_considered'])}")
+            if thinking_stats.get("tool_uses_considered"):
+                click.echo(
+                    f"  Tools Considered: {', '.join(thinking_stats['tool_uses_considered'])}"
+                )
 
-            if thinking_stats.get('first_thinking'):
+            if thinking_stats.get("first_thinking"):
                 click.echo(f"  First Thinking: {thinking_stats['first_thinking']}")
-            if thinking_stats.get('last_thinking'):
+            if thinking_stats.get("last_thinking"):
                 click.echo(f"  Last Thinking: {thinking_stats['last_thinking']}")
 
             click.echo()
-            if task.get('thinking_log_path'):
+            if task.get("thinking_log_path"):
                 click.echo(f"  Full log: {task['thinking_log_path']}")
 
         else:
@@ -1533,10 +1547,12 @@ def thinking(ctx, task_id, list_logs, stats):
                 click.echo(f"Task ID: {task_id}")
                 click.echo()
 
-                if task.get('thinking_summary'):
+                if task.get("thinking_summary"):
                     click.echo(f"Summary: {task['thinking_summary']}")
                 else:
-                    click.echo("This task may not have been executed yet or thinking capture was disabled.")
+                    click.echo(
+                        "This task may not have been executed yet or thinking capture was disabled."
+                    )
 
                 return
 
@@ -1552,6 +1568,7 @@ def thinking(ctx, task_id, list_logs, stats):
     except Exception as e:
         click.echo(f"❌ Error reading thinking log: {e}", err=True)
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

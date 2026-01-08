@@ -36,7 +36,7 @@ class TestHookExecutor:
             "id": "task-123",
             "type": "bug_fix",
             "title": "Fix critical bug",
-            "priority": 1
+            "priority": 1,
         }
 
     @pytest.mark.asyncio
@@ -71,13 +71,11 @@ class TestHookExecutor:
         assert len(result["errors"]) == 1
 
     @pytest.mark.asyncio
-    async def test_multiple_hooks_stop_on_first_failure(self, hook_executor, sample_task):
+    async def test_multiple_hooks_stop_on_first_failure(
+        self, hook_executor, sample_task
+    ):
         """Multiple hooks should stop at first failure"""
-        hooks = [
-            "echo 'first'",
-            "exit 1",
-            "echo 'third'"  # Should not execute
-        ]
+        hooks = ["echo 'first'", "exit 1", "echo 'third'"]  # Should not execute
         result = await hook_executor.execute_hooks(hooks, "pre_hooks", sample_task)
 
         assert result["success"] is False
@@ -87,11 +85,7 @@ class TestHookExecutor:
     @pytest.mark.asyncio
     async def test_all_hooks_pass(self, hook_executor, sample_task):
         """All hooks passing should succeed"""
-        hooks = [
-            "echo 'first'",
-            "echo 'second'",
-            "echo 'third'"
-        ]
+        hooks = ["echo 'first'", "echo 'second'", "echo 'third'"]
         result = await hook_executor.execute_hooks(hooks, "post_hooks", sample_task)
 
         assert result["success"] is True
@@ -115,10 +109,7 @@ class TestHookExecutor:
         """Hook should timeout if it runs too long"""
         hooks = ["sleep 10"]  # Will timeout
         result = await hook_executor.execute_hooks(
-            hooks,
-            "pre_hooks",
-            sample_task,
-            timeout=1  # 1 second timeout
+            hooks, "pre_hooks", sample_task, timeout=1  # 1 second timeout
         )
 
         assert result["success"] is False
@@ -126,7 +117,9 @@ class TestHookExecutor:
         assert result["timeout"] is True
 
     @pytest.mark.asyncio
-    async def test_hook_working_directory(self, hook_executor, sample_task, temp_project_dir):
+    async def test_hook_working_directory(
+        self, hook_executor, sample_task, temp_project_dir
+    ):
         """Hooks should execute in project directory"""
         # Create a test file in project dir
         test_file = temp_project_dir / "test.txt"
@@ -189,9 +182,7 @@ class TestTaskTypeHooks:
         custom_post = ["echo 'done'", "pytest tests/"]
 
         success = await task_type_manager.set_hooks_for_type(
-            "bug_fix",
-            pre_hooks=custom_pre,
-            post_hooks=custom_post
+            "bug_fix", pre_hooks=custom_pre, post_hooks=custom_post
         )
 
         assert success is True
@@ -209,8 +200,7 @@ class TestTaskTypeHooks:
         custom_pre = ["echo 'pre check'"]
 
         success = await task_type_manager.set_hooks_for_type(
-            "test",
-            pre_hooks=custom_pre
+            "test", pre_hooks=custom_pre
         )
 
         assert success is True
@@ -223,8 +213,7 @@ class TestTaskTypeHooks:
         custom_post = ["pytest -v"]
 
         success = await task_type_manager.set_hooks_for_type(
-            "refactor",
-            post_hooks=custom_post
+            "refactor", post_hooks=custom_post
         )
 
         assert success is True
@@ -273,7 +262,7 @@ class TestHookErrorHandling:
             "id": "task-error-test",
             "type": "test",
             "title": "Error handling test",
-            "priority": 3
+            "priority": 3,
         }
 
     @pytest.mark.asyncio

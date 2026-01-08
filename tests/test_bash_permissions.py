@@ -28,11 +28,13 @@ class TestBashPermissionsPatternMatching:
 
     def test_multiple_patterns(self):
         """Test multiple permission patterns"""
-        hooks = QualityGateHooks(bash_permissions=[
-            "pytest *",
-            "git status*",
-            "git diff*",
-        ])
+        hooks = QualityGateHooks(
+            bash_permissions=[
+                "pytest *",
+                "git status*",
+                "git diff*",
+            ]
+        )
 
         assert hooks._is_bash_command_allowed("pytest tests/")
         assert hooks._is_bash_command_allowed("git status")
@@ -101,7 +103,10 @@ class TestBashPermissionsHookIntegration:
         # Should return block response
         assert "hookSpecificOutput" in result
         assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
-        assert "not in the allowed bash permissions" in result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert (
+            "not in the allowed bash permissions"
+            in result["hookSpecificOutput"]["permissionDecisionReason"]
+        )
 
     @pytest.mark.asyncio
     async def test_dangerous_commands_always_blocked(self):
@@ -119,7 +124,10 @@ class TestBashPermissionsHookIntegration:
         # Should be blocked as dangerous
         assert "hookSpecificOutput" in result
         assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
-        assert "blocked for safety reasons" in result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert (
+            "blocked for safety reasons"
+            in result["hookSpecificOutput"]["permissionDecisionReason"]
+        )
 
     @pytest.mark.asyncio
     async def test_no_whitelist_allows_safe_commands(self):
@@ -165,16 +173,13 @@ class TestTaskTypeBashPermissions:
 
         # Add a custom task type
         await manager.add_task_type(
-            "custom_test",
-            "Custom Test",
-            "Custom task type for testing"
+            "custom_test", "Custom Test", "Custom task type for testing"
         )
 
         # Set custom bash permissions
         custom_permissions = ["npm test", "npm run lint"]
         success = await manager.set_bash_permissions_for_type(
-            "custom_test",
-            custom_permissions
+            "custom_test", custom_permissions
         )
 
         assert success is True

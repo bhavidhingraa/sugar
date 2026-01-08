@@ -205,7 +205,9 @@ class SugarAgent:
         self.config = config
         self.quality_gates_config = quality_gates_config or {}
         self.bash_permissions = bash_permissions
-        self.hooks = QualityGateHooks(self.quality_gates_config, bash_permissions=bash_permissions)
+        self.hooks = QualityGateHooks(
+            self.quality_gates_config, bash_permissions=bash_permissions
+        )
         self._session_active = False
         self._execution_history: List[Dict[str, Any]] = []
         self._current_options: Optional[ClaudeAgentOptions] = None
@@ -269,7 +271,9 @@ Guidelines:
         # Build tool restrictions for the SDK
         # Only include if specified (None/empty list = no restriction)
         allowed = self.config.allowed_tools if self.config.allowed_tools else None
-        disallowed = self.config.disallowed_tools if self.config.disallowed_tools else None
+        disallowed = (
+            self.config.disallowed_tools if self.config.disallowed_tools else None
+        )
 
         options = ClaudeAgentOptions(
             system_prompt=self._build_system_prompt(task_context),
@@ -338,18 +342,28 @@ Guidelines:
                                     block.thinking if hasattr(block, "thinking") else ""
                                 )
                                 signature = (
-                                    block.signature if hasattr(block, "signature") else None
+                                    block.signature
+                                    if hasattr(block, "signature")
+                                    else None
                                 )
                                 thinking_blocks.append(
-                                    {"content": thinking_content, "signature": signature}
+                                    {
+                                        "content": thinking_content,
+                                        "signature": signature,
+                                    }
                                 )
 
                                 # Pass to thinking capture if enabled
                                 if self._thinking_capture:
                                     # Determine what tool might be next
                                     next_tool = None
-                                    if len(message.content) > message.content.index(block) + 1:
-                                        next_block = message.content[message.content.index(block) + 1]
+                                    if (
+                                        len(message.content)
+                                        > message.content.index(block) + 1
+                                    ):
+                                        next_block = message.content[
+                                            message.content.index(block) + 1
+                                        ]
                                         if isinstance(next_block, ToolUseBlock):
                                             next_tool = next_block.name
 
@@ -387,14 +401,20 @@ Guidelines:
                                     thinking_content = block.get("thinking", "")
                                     signature = block.get("signature")
                                     thinking_blocks.append(
-                                        {"content": thinking_content, "signature": signature}
+                                        {
+                                            "content": thinking_content,
+                                            "signature": signature,
+                                        }
                                     )
 
                                     # Pass to thinking capture if enabled
                                     if self._thinking_capture:
                                         # Check if next block is a tool_use
                                         next_tool = None
-                                        if i + 1 < len(content) and content[i + 1].get("type") == "tool_use":
+                                        if (
+                                            i + 1 < len(content)
+                                            and content[i + 1].get("type") == "tool_use"
+                                        ):
                                             next_tool = content[i + 1].get("name")
 
                                         self._thinking_capture.capture(
@@ -481,11 +501,13 @@ Guidelines:
             async def do_query():
                 return await self._execute_with_streaming(prompt, options)
 
-            content_parts, tool_uses, files_modified, thinking_blocks = await retry_with_backoff(
-                do_query,
-                max_retries=self.config.max_retries,
-                base_delay=self.config.retry_base_delay,
-                max_delay=self.config.retry_max_delay,
+            content_parts, tool_uses, files_modified, thinking_blocks = (
+                await retry_with_backoff(
+                    do_query,
+                    max_retries=self.config.max_retries,
+                    base_delay=self.config.retry_base_delay,
+                    max_delay=self.config.retry_max_delay,
+                )
             )
 
             execution_time = (datetime.now(timezone.utc) - start_time).total_seconds()
