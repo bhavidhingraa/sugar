@@ -1,4 +1,4 @@
-# Sugar 🍰
+# 🍰 Sugar
 
 The dev team that never stops.
 
@@ -594,7 +594,12 @@ black .
 
 ## License
 
-MIT - see [LICENSE](LICENSE) and [TERMS.md](TERMS.md)
+**Dual License: AGPL-3.0 + Commercial**
+
+- **Open Source (AGPL-3.0)**: Free for open source projects and personal use
+- **Commercial License**: For proprietary use or SaaS offerings - [sugar.roboticforce.io/licensing](https://sugar.roboticforce.io/licensing)
+
+See [LICENSE](LICENSE) and [TERMS.md](TERMS.md) for details.
 
 ---
 
