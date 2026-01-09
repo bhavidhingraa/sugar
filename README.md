@@ -1,4 +1,4 @@
-# Sugar 🍰
+# 🍰 Sugar
 
 The dev team that never stops.
 
