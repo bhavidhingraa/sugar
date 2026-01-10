@@ -1,3 +1,12 @@
 {
-  "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "cdnsteve",
+      "id": 2465073,
+      "comment_id": 3731895110,
+      "created_at": "2026-01-10T06:18:37Z",
+      "repoId": 1042263006,
+      "pullRequestNo": 45
+    }
+  ]
 }
