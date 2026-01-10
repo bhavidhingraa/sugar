@@ -86,9 +86,11 @@ safety check
 
 ## PR Instructions
 
-### Branching Model (Gitflow)
+### Branching Model (Gitflow) - STRICT
 
-Sugar uses Gitflow - all PRs should target `develop`, not `main`:
+**NEVER push directly to `develop` or `main` branches.**
+
+All changes MUST go through feature/bugfix branches and PRs:
 
 | Branch | Purpose |
 |--------|---------|
@@ -96,13 +98,26 @@ Sugar uses Gitflow - all PRs should target `develop`, not `main`:
 | `develop` | Integration branch (target for all PRs) |
 | `feature/*` | New features |
 | `bugfix/*` | Bug fixes |
+| `hotfix/*` | Urgent production fixes (branch from main) |
+| `docs/*` | Documentation changes |
 
 ```bash
 # Always create branches from develop
 git checkout develop
 git pull origin develop
 git checkout -b feature/your-feature
+
+# After work is complete
+git push -u origin feature/your-feature
+# Then create PR targeting develop
 ```
+
+### Version Bumps
+
+After PRs are merged to develop, bump the dev version:
+- Format: `X.Y.Z.devN` in `pyproject.toml`
+- Example: `3.4.4.dev3` → `3.4.4.dev4`
+- Version bumps also go through PRs
 
 ### PR Title Format
 Follow conventional commit style:
