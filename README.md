@@ -4,7 +4,7 @@ The autonomous layer for AI coding agents.
 
 <!-- mcp-name: io.github.cdnsteve/sugar -->
 
-The autonomous layer for AI coding agents. Sugar manages your task queue, runs 24/7, and ships working code while you focus on what matters.
+Sugar manages your task queue, runs 24/7, and ships working code while you focus on what matters.
 
 ## What It Does
 
