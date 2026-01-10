@@ -5,6 +5,44 @@ All notable changes to the Sugar autonomous development system will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.4] - 2026-01-10
+
+### 🔄 MINOR RELEASE: Agent-Agnostic Rebranding
+
+Sugar is now fully agent-agnostic! This release removes Claude Code-specific branding and positioning, making Sugar the autonomous layer for **any** AI coding agent.
+
+### Changed
+
+#### Agent-Agnostic Positioning
+- **New tagline**: "The autonomous layer for AI coding agents"
+- **Works with any CLI**: Claude Code, OpenCode, Aider, Goose, or any AI agent
+- **Updated documentation**: All references now agent-agnostic
+- **pyproject.toml**: Description updated to reflect multi-agent support
+
+#### Installation
+- **Recommended: pipx** - Global installation without venv activation
+- **Friendly errors**: Clear guidance when Sugar not initialized in current directory
+- **Updated docs**: All installation instructions now recommend pipx
+
+### Added
+
+#### Developer Experience
+- **AGENTS.md rewrite**: Accurate project structure and development guidelines
+- **Strict gitflow rules**: NEVER push directly to develop/main branches
+- **Changelog requirements**: All releases must update CHANGELOG.md
+- **Branch protection**: CI must pass before merging to main
+
+### Removed
+
+#### Documentation Cleanup
+- **VISION.md**: Outdated content now consolidated in README
+- **slashcommands-integration-plan.md**: Implementation complete, plan no longer needed
+
+### Fixed
+- **README**: Removed redundant duplicate tagline
+
+---
+
 ## [3.0.0] - 2025-12-19
 
 ### 🚀 MAJOR RELEASE: Claude Agent SDK Integration

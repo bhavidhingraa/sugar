@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sugar Main Entry Point - Start the AI-powered autonomous development system
+🍰 Sugar - The autonomous layer for AI coding agents
 """
 import asyncio
 import json
@@ -124,6 +124,60 @@ def setup_logging(log_file_path=".sugar/sugar.log", debug=False):
 logger = logging.getLogger(__name__)
 
 
+def _require_sugar_project(config_file: str) -> dict:
+    """
+    Load Sugar config, or exit with friendly error if not a Sugar project.
+
+    Args:
+        config_file: Path to config file (usually .sugar/config.yaml)
+
+    Returns:
+        Loaded config dictionary
+
+    Raises:
+        SystemExit: If config file not found or invalid
+    """
+    import yaml
+    from pathlib import Path
+
+    config_path = Path(config_file)
+
+    if not config_path.exists():
+        click.echo("❌ Not a Sugar project", err=True)
+        click.echo("", err=True)
+        click.echo(f"   Could not find: {config_file}", err=True)
+        click.echo("", err=True)
+        click.echo(
+            "   Run 'sugar init' to initialize Sugar in this directory.", err=True
+        )
+        sys.exit(1)
+
+    try:
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        if not config or "sugar" not in config:
+            click.echo("❌ Invalid Sugar configuration", err=True)
+            click.echo("", err=True)
+            click.echo(
+                f"   The config file exists but appears invalid: {config_file}",
+                err=True,
+            )
+            click.echo(
+                "   Try removing .sugar/ and running 'sugar init' again.", err=True
+            )
+            sys.exit(1)
+
+        return config
+
+    except yaml.YAMLError as e:
+        click.echo("❌ Invalid Sugar configuration", err=True)
+        click.echo("", err=True)
+        click.echo(f"   YAML parse error in {config_file}:", err=True)
+        click.echo(f"   {e}", err=True)
+        sys.exit(1)
+
+
 def _format_duration(seconds: float) -> str:
     """Format duration in seconds to human-readable format"""
     if seconds < 60:
@@ -159,9 +213,9 @@ def signal_handler(signum, frame):
 @click.option("--version", is_flag=True, help="Show version information")
 @click.pass_context
 def cli(ctx, config, debug, version):
-    """Sugar 🍰 - AI-powered autonomous development system
+    """🍰 Sugar - The autonomous layer for AI coding agents
 
-    A lightweight autonomous development system that works with Claude Code CLI
+    Manages task queues, runs 24/7, and ships working code with any AI coding CLI.
     """
     # Handle version request
     if version:
@@ -386,8 +440,6 @@ def add(
 
         # Method 2: Stdin input
         elif stdin:
-            import sys
-
             stdin_data = sys.stdin.read().strip()
             if stdin_data:
                 task_data_override = json.loads(stdin_data)
@@ -418,14 +470,11 @@ def add(
     from .storage.work_queue import WorkQueue
     import uuid
 
+    # Load config (exits with friendly error if not a Sugar project)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
+
     try:
-        config_file = ctx.obj["config"]
-        # Load config to get database path
-        import yaml
-
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         # Initialize work queue
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
@@ -625,13 +674,12 @@ def list(ctx, status, limit, task_type, priority, output_format):
     """List tasks in Sugar work queue"""
 
     from .storage.work_queue import WorkQueue
-    import yaml
+
+    # Load config (exits with friendly error if not a Sugar project)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
         # Get tasks
@@ -751,13 +799,12 @@ def view(ctx, task_id, output_format):
     """View detailed information about a specific task"""
 
     from .storage.work_queue import WorkQueue
-    import yaml
+
+    # Load config (exits with friendly error if not a Sugar project)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
         # Get specific task
@@ -849,13 +896,11 @@ def remove(ctx, task_id):
     """Remove a task from the work queue"""
 
     from .storage.work_queue import WorkQueue
-    import yaml
+
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
         # Remove the task
@@ -879,13 +924,11 @@ def remove(ctx, task_id):
 def hold(ctx, task_id, reason):
     """Put a task on hold"""
     from .storage.work_queue import WorkQueue
-    import yaml
+
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
         async def _hold_task_async():
@@ -913,13 +956,11 @@ def hold(ctx, task_id, reason):
 def release(ctx, task_id):
     """Release a task from hold"""
     from .storage.work_queue import WorkQueue
-    import yaml
+
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
         async def _release_task_async():
@@ -961,17 +1002,15 @@ def update(ctx, task_id, title, description, priority, task_type, status):
     """Update an existing task"""
 
     from .storage.work_queue import WorkQueue
-    import yaml
 
     if not any([title, description, priority, task_type, status]):
         click.echo("❌ No updates specified. Use --help to see available options.")
         sys.exit(1)
 
-    try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    try:
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
         # Build updates dictionary
@@ -1078,14 +1117,11 @@ def priority(ctx, task_id, priority, urgent, high, normal, low, minimal):
         priority_names = {1: "urgent", 2: "high", 3: "normal", 4: "low", 5: "minimal"}
         priority_name = priority_names.get(new_priority, str(new_priority))
 
-    try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
-        work_queue = WorkQueue(
-            config.get("storage", {}).get("database", ".sugar/sugar.db")
-        )
+    try:
+        work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
         async def change_priority():
             await work_queue.initialize()
@@ -1154,13 +1190,11 @@ def orchestrate(ctx, task_id, stages):
     With --stages: shows detailed stage information
     """
     from .storage.work_queue import WorkQueue
-    import yaml
+
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
         async def show_orchestration():
@@ -1303,14 +1337,12 @@ def orchestrate(ctx, task_id, stages):
 def context(ctx, task_id):
     """View accumulated context for an orchestrated task."""
     from .storage.work_queue import WorkQueue
-    import yaml
     from pathlib import Path
 
-    try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    try:
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
         async def show_context():
@@ -1371,13 +1403,11 @@ def context(ctx, task_id):
 @click.pass_context
 def logs(ctx, lines, follow, level):
     """Show Sugar logs with debugging information"""
-    import yaml
+
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         log_file = (
             config.get("sugar", {}).get("logging", {}).get("file", ".sugar/sugar.log")
         )
@@ -1478,11 +1508,10 @@ def thinking(ctx, task_id, list_logs, stats):
         click.echo("\nUsage: sugar thinking TASK_ID")
         sys.exit(1)
 
-    try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    try:
         db_path = config["sugar"]["storage"]["database"]
 
         # Get task info
@@ -1605,13 +1634,11 @@ def learnings(ctx, lines, sessions, clear, refresh):
     from .learning.learnings_writer import LearningsWriter
     from .learning.feedback_processor import FeedbackProcessor
     from .storage.work_queue import WorkQueue
-    import yaml
+
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         sugar_dir = Path(config_file).parent
         learnings_writer = LearningsWriter(str(sugar_dir))
 
@@ -1697,14 +1724,12 @@ def learnings(ctx, lines, sessions, clear, refresh):
 @click.pass_context
 def debug(ctx):
     """Show debugging information about last Claude execution"""
-    import yaml
     import os
 
-    try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    try:
         # Check if session state exists
         context_file = (
             config.get("sugar", {})
@@ -1807,13 +1832,12 @@ def status(ctx):
     """Show Sugar system status and queue statistics"""
 
     from .storage.work_queue import WorkQueue
-    import yaml
+
+    # Load config (exits with friendly error if not a Sugar project)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     try:
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
 
         # Get statistics
@@ -1851,10 +1875,10 @@ def help():
 
     click.echo(
         """
-🍰 Sugar - AI-Powered Autonomous Development System
-================================================
+🍰 Sugar - The Autonomous Layer for AI Coding Agents
+=====================================================
 
-Sugar 🍰 is an autonomous development system that works with Claude Code CLI to
+Sugar is an autonomous development system that works with any AI coding CLI to
 provide 24/7 development assistance through task discovery and execution.
 
 📋 QUICK START
@@ -1925,10 +1949,10 @@ your-project/
 
 ⚠️  EXECUTION CONTEXT
 ---------------------
-• Run Sugar OUTSIDE of Claude Code sessions (in regular terminal)
-• Sugar calls Claude Code CLI as needed for task execution
-• Architecture: Terminal → Sugar → Claude Code CLI
-• Avoid: Claude Code → Sugar (recursive execution)
+• Run Sugar in a regular terminal (outside AI coding sessions)
+• Sugar calls your configured AI agent CLI for task execution
+• Architecture: Terminal → Sugar → AI Agent CLI
+• Avoid running Sugar from within an AI coding session (recursive execution)
 
 📖 DOCUMENTATION
 ----------------
@@ -1974,19 +1998,22 @@ Ready to supercharge your development workflow? 🚀
 @click.pass_context
 def run(ctx, dry_run, once, validate):
     """
-    Start Sugar - AI-powered autonomous development system
+    Start Sugar - The autonomous layer for AI coding agents
 
-    A lightweight autonomous development system that:
+    An autonomous development system that:
     - Discovers work from error logs and feedback
-    - Executes tasks using Claude Code CLI
+    - Executes tasks using your configured AI agent
     - Learns and adapts from results
     """
     global sugar_loop
 
+    # Verify this is a Sugar project before proceeding
+    config_file = ctx.obj["config"]
+    _require_sugar_project(config_file)
+
     try:
         # Initialize Sugar
-        config = ctx.obj["config"]
-        sugar_loop = SugarLoop(config)
+        sugar_loop = SugarLoop(config_file)
 
         # Override dry_run if specified
         if dry_run:
@@ -2580,23 +2607,11 @@ def stop(ctx, force):
     import pathlib
 
     config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
-    # Load config to get consistent path with PID file creation
-    import yaml
-
-    try:
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-        # Use same path logic as PID file creation
-        database_path = (
-            config.get("sugar", {})
-            .get("storage", {})
-            .get("database", ".sugar/sugar.db")
-        )
-        config_dir = pathlib.Path(database_path).parent
-    except:
-        # Fallback to config file directory
-        config_dir = pathlib.Path(config_file).parent
+    # Use same path logic as PID file creation
+    database_path = config["sugar"]["storage"]["database"]
+    config_dir = pathlib.Path(database_path).parent
 
     pidfile = config_dir / "sugar.pid"
 
@@ -2681,10 +2696,10 @@ def debug(ctx, format, output, include_sensitive):
     from datetime import datetime, timedelta
     from pathlib import Path
 
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
+
     async def generate_diagnostic():
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
 
         from .storage.work_queue import WorkQueue
 
@@ -2960,13 +2975,11 @@ def dedupe(ctx, dry_run):
     """Remove duplicate work items based on source_file"""
     import aiosqlite
     from .storage.work_queue import WorkQueue
-    import yaml
+
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     async def _dedupe_work():
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         work_queue = WorkQueue(config["sugar"]["storage"]["database"])
         await work_queue.initialize()
 
@@ -3036,14 +3049,11 @@ def cleanup(ctx, dry_run):
     """Remove bogus work items (Sugar initialization tests, venv files, etc.)"""
     import aiosqlite
     from .storage.work_queue import WorkQueue
-    import yaml
+
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
     async def _cleanup_bogus_work():
-        # Load configuration
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-
         # Connect to database
         db_path = config["sugar"]["storage"]["database"]
         async with aiosqlite.connect(db_path) as db:
@@ -3156,15 +3166,12 @@ def task_type(ctx):
 @click.pass_context
 def list_task_types(ctx, format):
     """List all task types"""
-    import yaml
     from .storage.task_type_manager import TaskTypeManager
 
-    async def _list_task_types():
-        # Load configuration
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    async def _list_task_types():
         # Initialize TaskTypeManager
         db_path = config["sugar"]["storage"]["database"]
         manager = TaskTypeManager(db_path)
@@ -3213,15 +3220,12 @@ def list_task_types(ctx, format):
 @click.pass_context
 def add_task_type(ctx, type_id, name, description, agent, commit_template, emoji):
     """Add a new task type"""
-    import yaml
     from .storage.task_type_manager import TaskTypeManager
 
-    async def _add_task_type():
-        # Load configuration
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    async def _add_task_type():
         # Initialize TaskTypeManager
         db_path = config["sugar"]["storage"]["database"]
         manager = TaskTypeManager(db_path)
@@ -3259,15 +3263,12 @@ def add_task_type(ctx, type_id, name, description, agent, commit_template, emoji
 @click.pass_context
 def edit_task_type(ctx, type_id, name, description, agent, commit_template, emoji):
     """Edit an existing task type"""
-    import yaml
     from .storage.task_type_manager import TaskTypeManager
 
-    async def _edit_task_type():
-        # Load configuration
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    async def _edit_task_type():
         # Initialize TaskTypeManager
         db_path = config["sugar"]["storage"]["database"]
         manager = TaskTypeManager(db_path)
@@ -3297,15 +3298,12 @@ def edit_task_type(ctx, type_id, name, description, agent, commit_template, emoj
 @click.pass_context
 def remove_task_type(ctx, type_id, force):
     """Remove a custom task type (cannot remove defaults)"""
-    import yaml
     from .storage.task_type_manager import TaskTypeManager
 
-    async def _remove_task_type():
-        # Load configuration
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    async def _remove_task_type():
         # Initialize TaskTypeManager
         db_path = config["sugar"]["storage"]["database"]
         manager = TaskTypeManager(db_path)
@@ -3348,15 +3346,12 @@ def remove_task_type(ctx, type_id, force):
 @click.pass_context
 def show_task_type(ctx, type_id):
     """Show details of a specific task type"""
-    import yaml
     from .storage.task_type_manager import TaskTypeManager
 
-    async def _show_task_type():
-        # Load configuration
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    async def _show_task_type():
         # Initialize TaskTypeManager
         db_path = config["sugar"]["storage"]["database"]
         manager = TaskTypeManager(db_path)
@@ -3396,15 +3391,12 @@ def show_task_type(ctx, type_id):
 @click.pass_context
 def export_task_types(ctx, file):
     """Export custom task types to JSON for version control"""
-    import yaml
     from .storage.task_type_manager import TaskTypeManager
 
-    async def _export_task_types():
-        # Load configuration
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    async def _export_task_types():
         # Initialize TaskTypeManager
         db_path = config["sugar"]["storage"]["database"]
         manager = TaskTypeManager(db_path)
@@ -3439,15 +3431,12 @@ def export_task_types(ctx, file):
 @click.pass_context
 def import_task_types(ctx, file, overwrite):
     """Import task types from JSON file"""
-    import yaml
     from .storage.task_type_manager import TaskTypeManager
 
-    async def _import_task_types():
-        # Load configuration
-        config_file = ctx.obj["config"]
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
+    config_file = ctx.obj["config"]
+    config = _require_sugar_project(config_file)
 
+    async def _import_task_types():
         # Initialize TaskTypeManager
         db_path = config["sugar"]["storage"]["database"]
         manager = TaskTypeManager(db_path)
