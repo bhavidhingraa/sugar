@@ -23,14 +23,36 @@ You plan the work. Sugar executes it.
 
 ## Install
 
+**Recommended: pipx** (no venv hassle - works globally)
+```bash
+pipx install sugarai
+```
+
+**Upgrade / Uninstall:**
+```bash
+pipx upgrade sugarai    # Upgrade to latest version
+pipx uninstall sugarai  # Remove completely
+```
+
+<details>
+<summary>Other installation methods</summary>
+
+**pip** (traditional - requires venv activation)
 ```bash
 pip install sugarai
 ```
 
-Or use uv (much faster):
+**uv** (fast alternative to pip)
 ```bash
 uv pip install sugarai
 ```
+
+**With GitHub integration:**
+```bash
+pipx install 'sugarai[github]'
+```
+
+</details>
 
 ## Quick Start
 
