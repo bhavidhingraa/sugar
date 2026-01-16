@@ -71,7 +71,7 @@ sugar = "sugar.main:cli"
 
 [project.urls]
 Homepage = "https://github.com/roboticforce/sugar"
-Documentation = "https://docs.roboticforce.io/sugar"
+Documentation = "https://sugar.roboticforce.io/"
 Repository = "https://github.com/roboticforce/sugar"
 "Bug Tracker" = "https://github.com/roboticforce/sugar/issues"
 
