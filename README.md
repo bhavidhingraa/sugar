@@ -12,6 +12,7 @@ Sugar adds **autonomy and persistence** to your AI coding workflow. Instead of o
 
 - **Continuous execution** - Runs 24/7, working through your task queue
 - **Agent-agnostic** - Works with Claude Code, OpenCode, Aider, or any AI CLI
+- **Persistent memory** - Remember decisions, preferences, and patterns across sessions
 - **Delegate and forget** - Hand off tasks from any session
 - **Builds features** - Takes specs, implements, tests, commits working code
 - **Fixes bugs** - Reads error logs, investigates, implements fixes
@@ -98,6 +99,26 @@ Sugar will:
 5. Move to the next task
 
 It keeps going until the queue is empty (or you stop it).
+
+## Memory System
+
+Sugar remembers what matters across sessions. No more re-explaining decisions or rediscovering patterns.
+
+```bash
+# Store knowledge
+sugar remember "Always use async/await, never callbacks" --type preference
+sugar remember "JWT tokens use RS256, expire in 15 min" --type decision
+
+# Search memories
+sugar recall "authentication"
+
+# Claude Code integration - give Claude access to your project memory
+claude mcp add sugar -- sugar mcp memory
+```
+
+**Memory types:** `decision`, `preference`, `file_context`, `error_pattern`, `research`, `outcome`
+
+**Full docs:** [Memory System Guide](docs/user/memory.md)
 
 **Delegate from Claude Code:**
 ```
@@ -187,6 +208,12 @@ With pipx, Sugar's dependencies don't conflict with your project's dependencies.
 
 ## Features
 
+**Memory System** *(New in 3.5)*
+- Persistent semantic memory across sessions
+- Remember decisions, preferences, error patterns
+- Claude Code integration via MCP server
+- Semantic search with `sugar recall`
+
 **Task Management**
 - Rich task context with priorities and metadata
 - Custom task types for your workflow
@@ -213,13 +240,7 @@ With pipx, Sugar's dependencies don't conflict with your project's dependencies.
 - Self-correcting loops until tests pass
 - Prevents single-shot failures
 
-**Memory System** *(New in 3.5)*
-- Persistent semantic memory across sessions
-- Remember decisions, preferences, error patterns
-- Claude Code integration via MCP server
-- `sugar remember` / `sugar recall` commands
-
-**Full docs:** [docs/ralph-wiggum.md](docs/ralph-wiggum.md) | [Memory System](docs/user/memory.md)
+**Full docs:** [Memory System](docs/user/memory.md) | [Ralph Wiggum](docs/ralph-wiggum.md)
 
 ## Configuration
 
