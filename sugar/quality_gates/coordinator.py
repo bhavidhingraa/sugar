@@ -7,17 +7,17 @@ before allowing task completion.
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-from .test_validator import TestExecutionValidator, TestExecutionResult
-from .success_criteria import SuccessCriteriaVerifier, SuccessCriterion
-from .truth_enforcer import TruthEnforcer
+from .diff_validator import DiffValidator
 from .evidence import EvidenceCollector
+from .failure_handler import VerificationFailureHandler
 from .functional_verifier import FunctionalVerifier
 from .preflight_checks import PreFlightChecker
-from .failure_handler import VerificationFailureHandler
-from .diff_validator import DiffValidator
+from .success_criteria import SuccessCriteriaVerifier, SuccessCriterion
+from .test_validator import TestExecutionResult, TestExecutionValidator
+from .truth_enforcer import TruthEnforcer
 from .verification_gate import VerificationGate, VerificationResults, VerificationStatus
 
 logger = logging.getLogger(__name__)

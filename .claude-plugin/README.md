@@ -165,7 +165,7 @@ sugar:
 
 - **Issues**: [GitHub Issues](https://github.com/roboticforce/sugar/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/roboticforce/sugar/discussions)
-- **Documentation**: [docs.roboticforce.io/sugar](https://docs.roboticforce.io/sugar)
+- **Documentation**: [sugar.roboticforce.io](https://sugar.roboticforce.io/)
 
 ## License
 

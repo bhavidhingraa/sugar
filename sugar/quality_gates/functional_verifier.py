@@ -9,12 +9,12 @@ Verifies that fixes actually work in the running application through:
 
 import asyncio
 import json
+import logging
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import logging
-import re
 
 logger = logging.getLogger(__name__)
 

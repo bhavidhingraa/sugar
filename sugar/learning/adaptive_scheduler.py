@@ -5,7 +5,8 @@ Adaptive Scheduler - Adjust system behavior based on learning insights
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 from .feedback_processor import FeedbackProcessor
 
 logger = logging.getLogger(__name__)

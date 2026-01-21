@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sugarai"
-version = "3.4.4"
+version = "3.5.0"
 description = "🍰 Sugar - The autonomous layer for AI coding agents. Manages task queues, runs 24/7, ships working code."
 
 readme = "README.md"
@@ -65,13 +65,20 @@ mcp = [
     "starlette>=0.27.0",
     "uvicorn>=0.22.0",
 ]
+memory = [
+    "sentence-transformers>=2.2.0",
+    "sqlite-vec>=0.1.0",
+]
+all = [
+    "sugarai[github,mcp,memory]",
+]
 
 [project.scripts]
 sugar = "sugar.main:cli"
 
 [project.urls]
 Homepage = "https://github.com/roboticforce/sugar"
-Documentation = "https://docs.roboticforce.io/sugar"
+Documentation = "https://sugar.roboticforce.io/"
 Repository = "https://github.com/roboticforce/sugar"
 "Bug Tracker" = "https://github.com/roboticforce/sugar/issues"
 

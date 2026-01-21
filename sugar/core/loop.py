@@ -5,22 +5,23 @@ Sugar Core Loop - The heart of autonomous development
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
-import yaml
 from pathlib import Path
+from typing import List, Optional
 
+import yaml
+
+from ..__version__ import get_version_info
+from ..discovery.code_quality import CodeQualityScanner
 from ..discovery.error_monitor import ErrorLogMonitor
 from ..discovery.github_watcher import GitHubWatcher
-from ..discovery.code_quality import CodeQualityScanner
 from ..discovery.test_coverage import TestCoverageAnalyzer
-from ..executor.claude_wrapper import ClaudeWrapper
 from ..executor.agent_sdk_executor import AgentSDKExecutor
-from ..storage.work_queue import WorkQueue
-from ..learning.feedback_processor import FeedbackProcessor
+from ..executor.claude_wrapper import ClaudeWrapper
 from ..learning.adaptive_scheduler import AdaptiveScheduler
+from ..learning.feedback_processor import FeedbackProcessor
+from ..storage.work_queue import WorkQueue
 from ..utils.git_operations import GitOperations
 from ..workflow.orchestrator import WorkflowOrchestrator
-from ..__version__ import get_version_info
 
 logger = logging.getLogger(__name__)
 

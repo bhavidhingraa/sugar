@@ -6,10 +6,10 @@ Tasks cannot complete until all success criteria are verified.
 """
 
 import asyncio
-import subprocess
-from typing import Any, Dict, List, Optional, Tuple
 import logging
 import re
+import subprocess
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

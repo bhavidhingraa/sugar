@@ -9,13 +9,13 @@ Manages customer API keys for authentication:
 
 import hashlib
 import hmac
+import json
 import logging
 import os
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-import json
 
 logger = logging.getLogger(__name__)
 

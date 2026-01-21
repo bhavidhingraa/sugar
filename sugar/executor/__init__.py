@@ -7,9 +7,9 @@ Provides task execution implementations:
 - AgentSDKExecutor: Native SDK-based execution (v3+)
 """
 
+from .agent_sdk_executor import AgentSDKExecutor
 from .base import BaseExecutor, ExecutionResult
 from .claude_wrapper import ClaudeWrapper
-from .agent_sdk_executor import AgentSDKExecutor
 from .hooks import HookExecutor
 
 __all__ = [

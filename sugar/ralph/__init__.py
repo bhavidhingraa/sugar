@@ -10,17 +10,17 @@ This module provides:
 - CompletionSignalDetector: Multi-pattern completion signal detector
 """
 
-from .validator import CompletionCriteriaValidator, ValidationResult
-from .profile import RalphWiggumProfile
 from .config import RalphConfig
+from .profile import RalphWiggumProfile
 from .signals import (
     CompletionSignal,
-    CompletionType,
     CompletionSignalDetector,
+    CompletionType,
     detect_completion,
-    has_completion_signal,
     extract_signal_text,
+    has_completion_signal,
 )
+from .validator import CompletionCriteriaValidator, ValidationResult
 
 __all__ = [
     # Core validation

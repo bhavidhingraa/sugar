@@ -12,6 +12,7 @@ Sugar adds **autonomy and persistence** to your AI coding workflow. Instead of o
 
 - **Continuous execution** - Runs 24/7, working through your task queue
 - **Agent-agnostic** - Works with Claude Code, OpenCode, Aider, or any AI CLI
+- **Persistent memory** - Remember decisions, preferences, and patterns across sessions
 - **Delegate and forget** - Hand off tasks from any session
 - **Builds features** - Takes specs, implements, tests, commits working code
 - **Fixes bugs** - Reads error logs, investigates, implements fixes
@@ -54,6 +55,16 @@ uv pip install sugarai
 pipx install 'sugarai[github]'
 ```
 
+**With memory system (semantic search):**
+```bash
+pipx install 'sugarai[memory]'
+```
+
+**All features:**
+```bash
+pipx install 'sugarai[all]'
+```
+
 </details>
 
 ## Quick Start
@@ -88,6 +99,31 @@ Sugar will:
 5. Move to the next task
 
 It keeps going until the queue is empty (or you stop it).
+
+## Memory System
+
+Sugar remembers what matters across sessions. No more re-explaining decisions or rediscovering patterns.
+
+**Saves tokens:** Memories are stored as compressed summaries (~90% smaller) and retrieved only when relevant. Real projects see **~89% token reduction per session** - that's ~$32 saved over 500 sessions.
+
+```bash
+# Store knowledge
+sugar remember "Always use async/await, never callbacks" --type preference
+sugar remember "JWT tokens use RS256, expire in 15 min" --type decision
+
+# Search memories
+sugar recall "authentication"
+
+# Claude Code integration - give Claude access to your project memory
+claude mcp add sugar -- sugar mcp memory
+
+# See your token savings
+python examples/token_savings_demo.py
+```
+
+**Memory types:** `decision`, `preference`, `file_context`, `error_pattern`, `research`, `outcome`
+
+**Full docs:** [Memory System Guide](docs/user/memory.md)
 
 **Delegate from Claude Code:**
 ```
@@ -177,6 +213,12 @@ With pipx, Sugar's dependencies don't conflict with your project's dependencies.
 
 ## Features
 
+**Memory System** *(New in 3.5)*
+- Persistent semantic memory across sessions
+- Remember decisions, preferences, error patterns
+- Claude Code integration via MCP server
+- Semantic search with `sugar recall`
+
 **Task Management**
 - Rich task context with priorities and metadata
 - Custom task types for your workflow
@@ -203,7 +245,7 @@ With pipx, Sugar's dependencies don't conflict with your project's dependencies.
 - Self-correcting loops until tests pass
 - Prevents single-shot failures
 
-**Full docs:** [docs/ralph-wiggum.md](docs/ralph-wiggum.md)
+**Full docs:** [Memory System](docs/user/memory.md) | [Ralph Wiggum](docs/ralph-wiggum.md)
 
 ## Configuration
 
@@ -254,7 +296,28 @@ Claude: "I'll create a Sugar task for the test fixes."
 
 ### MCP Server Integration
 
-Sugar provides an MCP server for Goose, Claude Desktop, and other MCP clients.
+Sugar provides MCP servers for Goose, Claude Code, Claude Desktop, and other MCP clients.
+
+**Using with Claude Code (Memory):**
+```bash
+# Add Sugar memory to Claude Code
+claude mcp add sugar -- sugar mcp memory
+```
+
+Or add to `~/.claude.json`:
+```json
+{
+  "mcpServers": {
+    "sugar": {
+      "type": "stdio",
+      "command": "sugar",
+      "args": ["mcp", "memory"]
+    }
+  }
+}
+```
+
+This gives Claude Code access to your project's memory - decisions, preferences, error patterns, and more.
 
 **Using with Goose:**
 ```bash
@@ -278,6 +341,32 @@ goose configure
   }
 }
 ```
+
+### Memory System
+
+Sugar's memory system provides persistent context across sessions:
+
+```bash
+# Store memories
+sugar remember "Always use async/await, never callbacks" --type preference
+sugar remember "Auth tokens expire after 15 minutes" --type research --ttl 90d
+
+# Search memories
+sugar recall "how do we handle authentication"
+sugar recall "error patterns" --type error_pattern
+
+# List and manage
+sugar memories --type decision --since 7d
+sugar forget abc123 --force
+sugar memory-stats
+
+# Export for Claude Code SessionStart hook
+sugar export-context
+```
+
+**Memory types:** `decision`, `preference`, `file_context`, `error_pattern`, `research`, `outcome`
+
+**Full docs:** [Memory System Guide](docs/user/memory.md)
 
 ## Advanced Usage
 
@@ -342,6 +431,7 @@ sugar run --once                        # Test single cycle
 
 - [Quick Start](docs/user/quick-start.md)
 - [CLI Reference](docs/user/cli-reference.md)
+- [Memory System](docs/user/memory.md) *(New)*
 - [Task Orchestration](docs/task_orchestration.md)
 - [Ralph Wiggum](docs/ralph-wiggum.md)
 - [GitHub Integration](docs/user/github-integration.md)
@@ -376,6 +466,6 @@ pytest tests/ -v
 
 ---
 
-**Sugar v3.4** - The autonomous layer for AI coding agents
+**Sugar v3.5** - The autonomous layer for AI coding agents
 
 > ⚠️ Sugar is provided "AS IS" without warranty. Review all AI-generated code before use.

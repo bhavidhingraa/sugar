@@ -11,27 +11,27 @@ Claude Agent SDK integration, providing:
 - Real-time thinking capture for visibility into Claude's reasoning
 """
 
-import os
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from .base import BaseExecutor, ExecutionResult
 from ..agent import SugarAgent, SugarAgentConfig
-from ..storage import IssueResponseManager
-from ..profiles import IssueResponderProfile
 from ..config import IssueResponderConfig
 from ..integrations import GitHubClient
-from ..ralph import RalphWiggumProfile, RalphConfig
+from ..orchestration.model_router import ModelRouter, ModelSelection
+from ..profiles import IssueResponderProfile
+from ..ralph import RalphConfig, RalphWiggumProfile
 from ..ralph.signals import (
     CompletionSignal,
     CompletionSignalDetector,
     CompletionType,
 )
-from ..orchestration.model_router import ModelRouter, ModelSelection
-from .thinking_display import ThinkingCapture
+from ..storage import IssueResponseManager
+from .base import BaseExecutor, ExecutionResult
 from .hooks import HookExecutor
+from .thinking_display import ThinkingCapture
 
 logger = logging.getLogger(__name__)
 
@@ -682,7 +682,7 @@ class AgentSDKExecutor(BaseExecutor):
         """
         try:
             # Try to import SDK
-            from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
+            from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
             logger.info("Claude Agent SDK is available")
             return True
