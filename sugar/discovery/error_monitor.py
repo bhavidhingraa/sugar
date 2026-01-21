@@ -3,13 +3,13 @@ Error Log Monitor - Discover work by analyzing error logs and feedback
 """
 
 import asyncio
+import glob
 import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Dict, Any
-import glob
-import os
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 

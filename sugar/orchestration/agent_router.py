@@ -7,7 +7,7 @@ and task type analysis.
 
 import logging
 import re
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..orchestration.task_orchestrator import OrchestrationStage
 

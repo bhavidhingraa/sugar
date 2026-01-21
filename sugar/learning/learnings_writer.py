@@ -5,7 +5,7 @@ Learnings Writer - Persist learning insights to LEARNINGS.md progress log
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

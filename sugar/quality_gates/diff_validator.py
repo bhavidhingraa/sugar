@@ -9,9 +9,9 @@ Validates changes before commit:
 """
 
 import asyncio
+import logging
 import re
 from typing import Any, Dict, List, Tuple
-import logging
 
 logger = logging.getLogger(__name__)
 

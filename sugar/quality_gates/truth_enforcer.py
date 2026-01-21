@@ -5,8 +5,8 @@ Requires proof for all claims of success.
 Blocks task completion if claims lack evidence.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
 import logging
+from typing import Any, Dict, List, Optional, Tuple
 
 from .evidence import Evidence, EvidenceCollector
 

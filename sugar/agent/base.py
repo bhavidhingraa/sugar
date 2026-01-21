@@ -27,12 +27,12 @@ from claude_agent_sdk import (
 try:
     from claude_agent_sdk.types import (
         AssistantMessage,
-        TextBlock,
-        ThinkingBlock,
-        ToolUseBlock,
-        ToolResultBlock,
         ResultMessage,
         SystemMessage,
+        TextBlock,
+        ThinkingBlock,
+        ToolResultBlock,
+        ToolUseBlock,
     )
 
     SDK_HAS_TYPES = True
@@ -47,7 +47,7 @@ except ImportError:
     SystemMessage = dict
     SDK_HAS_TYPES = False
 
-from .hooks import QualityGateHooks, HookContext
+from .hooks import HookContext, QualityGateHooks
 
 logger = logging.getLogger(__name__)
 

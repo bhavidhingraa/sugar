@@ -6,12 +6,12 @@ Blocks commits if tests haven't been executed or if they fail.
 """
 
 import asyncio
+import logging
 import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import logging
 
 logger = logging.getLogger(__name__)
 
