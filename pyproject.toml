@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sugarai"
-version = "3.5.0"
+version = "3.6.0"
 description = "🍰 Sugar - The autonomous layer for AI coding agents. Manages task queues, runs 24/7, ships working code."
 
 readme = "README.md"
@@ -69,8 +69,11 @@ memory = [
     "sentence-transformers>=2.2.0",
     "sqlite-vec>=0.1.0",
 ]
+opencode = [
+    "aiohttp>=3.9.0",
+]
 all = [
-    "sugarai[github,mcp,memory]",
+    "sugarai[github,mcp,memory,opencode]",
 ]
 
 [project.scripts]
