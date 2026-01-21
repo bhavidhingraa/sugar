@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 import mcp as mcp_sdk
 from mcp.server import Server as MCPServer
 from mcp.server.sse import SseServerTransport
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 logger = logging.getLogger(__name__)
 
@@ -430,9 +430,9 @@ class SugarMCPServer:
 
         # Note: In production, you'd use a proper ASGI server like uvicorn
         # This is a simplified example
+        import uvicorn
         from starlette.applications import Starlette
         from starlette.routing import Mount
-        import uvicorn
 
         app = Starlette(
             routes=[

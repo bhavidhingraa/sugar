@@ -4,15 +4,15 @@ Supports both GitHub CLI (gh) and PyGithub authentication
 """
 
 import asyncio
-import logging
-import subprocess
 import json
+import logging
 import os
+import subprocess
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
-from ..storage import IssueResponseManager
 from ..config import IssueResponderConfig
+from ..storage import IssueResponseManager
 
 # Optional PyGithub import
 try:

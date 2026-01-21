@@ -8,8 +8,8 @@ replacing the subprocess-based ClaudeWrapper approach.
 from .base import SugarAgent, SugarAgentConfig
 from .hooks import (
     QualityGateHooks,
-    create_preflight_hook,
     create_audit_hook,
+    create_preflight_hook,
     create_security_hook,
 )
 from .subagent_manager import SubAgentManager, SubAgentResult

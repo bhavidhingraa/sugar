@@ -5,11 +5,11 @@ Feedback Processor - Learn from execution results and adapt behavior
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Any, Optional, Tuple
-from collections import defaultdict
-import statistics
 import re
+import statistics
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 from .learnings_writer import LearningsWriter
 

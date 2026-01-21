@@ -1,9 +1,10 @@
 """Configuration loader for the Issue Responder feature."""
 
 from dataclasses import dataclass, field
-from typing import List, Optional
-import yaml
 from pathlib import Path
+from typing import List, Optional
+
+import yaml
 
 
 @dataclass

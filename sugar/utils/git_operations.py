@@ -4,11 +4,12 @@ Git Operations Utility - Handle git branching, committing, and workflow operatio
 
 import asyncio
 import logging
-import subprocess
 import re
-from typing import Optional, Dict, Any
+import subprocess
 from pathlib import Path
-from ..__version__ import get_version_info, __version__
+from typing import Any, Dict, Optional
+
+from ..__version__ import __version__, get_version_info
 
 logger = logging.getLogger(__name__)
 
