@@ -632,12 +632,175 @@ class TestOpenCodeClientMocked:
                 OpenCodeClient,
                 AIOHTTP_AVAILABLE,
             )
+            from sugar.integrations.opencode.config import OpenCodeConfig
 
             if not AIOHTTP_AVAILABLE:
                 pytest.skip("aiohttp not installed")
 
-            # Would need to mock aiohttp session here
-            pass
+            config = OpenCodeConfig(server_url="http://test:4096")
+            client = OpenCodeClient(config)
+
+            # Mock the session and response
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session = MagicMock()
+            mock_session.get = MagicMock(return_value=mock_response)
+            mock_session.close = AsyncMock()
+
+            client._session = mock_session
+
+            result = await client.health_check()
+            assert result is True
+            mock_session.get.assert_called_once_with("/health")
+
+        except ImportError:
+            pytest.skip("aiohttp not installed")
+
+    async def test_health_check_failure(self):
+        """Test health check returns False on non-200"""
+        try:
+            from sugar.integrations.opencode.client import (
+                OpenCodeClient,
+                AIOHTTP_AVAILABLE,
+            )
+            from sugar.integrations.opencode.config import OpenCodeConfig
+
+            if not AIOHTTP_AVAILABLE:
+                pytest.skip("aiohttp not installed")
+
+            config = OpenCodeConfig(server_url="http://test:4096")
+            client = OpenCodeClient(config)
+
+            # Mock the session with 500 response
+            mock_response = AsyncMock()
+            mock_response.status = 500
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session = MagicMock()
+            mock_session.get = MagicMock(return_value=mock_response)
+            mock_session.close = AsyncMock()
+
+            client._session = mock_session
+
+            result = await client.health_check()
+            assert result is False
+
+        except ImportError:
+            pytest.skip("aiohttp not installed")
+
+    async def test_health_check_connection_error(self):
+        """Test health check raises on connection error"""
+        try:
+            import aiohttp
+            from sugar.integrations.opencode.client import (
+                OpenCodeClient,
+                AIOHTTP_AVAILABLE,
+            )
+            from sugar.integrations.opencode.config import OpenCodeConfig
+
+            if not AIOHTTP_AVAILABLE:
+                pytest.skip("aiohttp not installed")
+
+            config = OpenCodeConfig(server_url="http://test:4096")
+            client = OpenCodeClient(config)
+
+            # Mock the session to raise connection error
+            mock_session = MagicMock()
+            mock_session.get = MagicMock(
+                side_effect=aiohttp.ClientConnectorError(
+                    MagicMock(), OSError("Connection refused")
+                )
+            )
+            mock_session.close = AsyncMock()
+
+            client._session = mock_session
+
+            # Should raise the connection error (not catch it)
+            with pytest.raises(aiohttp.ClientConnectorError):
+                await client.health_check()
+
+        except ImportError:
+            pytest.skip("aiohttp not installed")
+
+    async def test_notify_success(self):
+        """Test notify returns True on 200"""
+        try:
+            from sugar.integrations.opencode.client import (
+                OpenCodeClient,
+                AIOHTTP_AVAILABLE,
+            )
+            from sugar.integrations.opencode.config import OpenCodeConfig
+            from sugar.integrations.opencode.models import NotificationLevel
+
+            if not AIOHTTP_AVAILABLE:
+                pytest.skip("aiohttp not installed")
+
+            config = OpenCodeConfig(server_url="http://test:4096")
+            client = OpenCodeClient(config)
+
+            # Mock the session and response
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session = MagicMock()
+            mock_session.post = MagicMock(return_value=mock_response)
+            mock_session.close = AsyncMock()
+
+            client._session = mock_session
+
+            result = await client.notify(
+                title="Test",
+                message="Test message",
+                level=NotificationLevel.INFO
+            )
+            assert result is True
+            mock_session.post.assert_called_once()
+
+        except ImportError:
+            pytest.skip("aiohttp not installed")
+
+    async def test_notify_connection_error(self):
+        """Test notify raises on connection error"""
+        try:
+            import aiohttp
+            from sugar.integrations.opencode.client import (
+                OpenCodeClient,
+                AIOHTTP_AVAILABLE,
+            )
+            from sugar.integrations.opencode.config import OpenCodeConfig
+            from sugar.integrations.opencode.models import NotificationLevel
+
+            if not AIOHTTP_AVAILABLE:
+                pytest.skip("aiohttp not installed")
+
+            config = OpenCodeConfig(server_url="http://test:4096")
+            client = OpenCodeClient(config)
+
+            # Mock the session to raise connection error
+            mock_session = MagicMock()
+            mock_session.post = MagicMock(
+                side_effect=aiohttp.ClientConnectorError(
+                    MagicMock(), OSError("Connection refused")
+                )
+            )
+            mock_session.close = AsyncMock()
+
+            client._session = mock_session
+
+            # Should raise the connection error (not catch it)
+            with pytest.raises(aiohttp.ClientConnectorError):
+                await client.notify(
+                    title="Test",
+                    message="Test message",
+                    level=NotificationLevel.INFO
+                )
+
         except ImportError:
             pytest.skip("aiohttp not installed")
 
@@ -749,3 +912,248 @@ class TestInjectorConstants:
         assert half_life["decision"] >= 365 * 5
         # Outcomes should expire fastest
         assert half_life["outcome"] < half_life["error_pattern"]
+
+
+# =============================================================================
+# OpenCode Setup CLI Tests
+# =============================================================================
+
+
+class TestOpenCodeSetupCommand:
+    """Tests for the sugar opencode setup CLI command"""
+
+    def test_setup_finds_config_file(self, tmp_path):
+        """Test that setup command finds OpenCode config file"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+
+        # Create a mock OpenCode config
+        config_dir = tmp_path / ".config" / "opencode"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "opencode.json"
+        config_file.write_text('{"$schema": "https://opencode.ai/config.json"}')
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+            result = runner.invoke(cli, ["opencode", "setup", "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Found config" in result.output
+        assert "sugar-tasks" in result.output
+        assert "sugar-memory" in result.output
+
+    def test_setup_dry_run_no_changes(self, tmp_path):
+        """Test that --dry-run doesn't modify files"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+
+        # Create a mock OpenCode config
+        config_dir = tmp_path / ".config" / "opencode"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "opencode.json"
+        original_content = '{"$schema": "https://opencode.ai/config.json"}'
+        config_file.write_text(original_content)
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+            result = runner.invoke(cli, ["opencode", "setup", "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Dry run" in result.output
+        # File should be unchanged
+        assert config_file.read_text() == original_content
+
+    def test_setup_adds_mcp_servers(self, tmp_path):
+        """Test that setup adds sugar MCP servers to config"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+        import json
+
+        # Create a mock OpenCode config
+        config_dir = tmp_path / ".config" / "opencode"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "opencode.json"
+        config_file.write_text('{"$schema": "https://opencode.ai/config.json"}')
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+            result = runner.invoke(cli, ["opencode", "setup", "--yes"])
+
+        assert result.exit_code == 0
+        assert "Config updated" in result.output
+
+        # Verify MCP servers were added
+        updated_config = json.loads(config_file.read_text())
+        assert "mcp" in updated_config
+        assert "sugar-tasks" in updated_config["mcp"]
+        assert "sugar-memory" in updated_config["mcp"]
+        assert updated_config["mcp"]["sugar-tasks"]["command"] == ["sugar", "mcp", "tasks"]
+
+    def test_setup_preserves_existing_config(self, tmp_path):
+        """Test that setup preserves existing configuration"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+        import json
+
+        # Create a mock OpenCode config with existing settings
+        config_dir = tmp_path / ".config" / "opencode"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "opencode.json"
+        config_file.write_text(json.dumps({
+            "$schema": "https://opencode.ai/config.json",
+            "plugin": ["existing-plugin"],
+            "mcp": {"existing-server": {"type": "local", "command": ["test"]}}
+        }))
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+            result = runner.invoke(cli, ["opencode", "setup", "--yes"])
+
+        assert result.exit_code == 0
+
+        # Verify existing config preserved
+        updated_config = json.loads(config_file.read_text())
+        assert "plugin" in updated_config
+        assert "existing-plugin" in updated_config["plugin"]
+        assert "existing-server" in updated_config["mcp"]
+        assert "sugar-tasks" in updated_config["mcp"]
+
+    def test_setup_idempotent(self, tmp_path):
+        """Test that running setup twice is safe"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+        import json
+
+        # Create a mock OpenCode config
+        config_dir = tmp_path / ".config" / "opencode"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "opencode.json"
+        config_file.write_text('{"$schema": "https://opencode.ai/config.json"}')
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+            # Run setup first time
+            result1 = runner.invoke(cli, ["opencode", "setup", "--yes"])
+            assert result1.exit_code == 0
+
+            # Run setup second time
+            result2 = runner.invoke(cli, ["opencode", "setup", "--yes"])
+            assert result2.exit_code == 0
+            assert "already configured" in result2.output
+
+    def test_setup_no_config_file_error(self, tmp_path):
+        """Test error when no OpenCode config file exists"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+
+        runner = CliRunner()
+        # Use empty temp dir with no config files
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+            result = runner.invoke(cli, ["opencode", "setup"])
+
+        assert result.exit_code == 1
+        assert "Could not find OpenCode config file" in result.output
+
+    def test_setup_no_memory_flag(self, tmp_path):
+        """Test --no-memory flag excludes memory server"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+        import json
+
+        # Create a mock OpenCode config
+        config_dir = tmp_path / ".config" / "opencode"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "opencode.json"
+        config_file.write_text('{"$schema": "https://opencode.ai/config.json"}')
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+            result = runner.invoke(cli, ["opencode", "setup", "--yes", "--no-memory"])
+
+        assert result.exit_code == 0
+
+        updated_config = json.loads(config_file.read_text())
+        assert "sugar-tasks" in updated_config["mcp"]
+        assert "sugar-memory" not in updated_config["mcp"]
+
+    def test_setup_no_tasks_flag(self, tmp_path):
+        """Test --no-tasks flag excludes tasks server"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+        import json
+
+        # Create a mock OpenCode config
+        config_dir = tmp_path / ".config" / "opencode"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "opencode.json"
+        config_file.write_text('{"$schema": "https://opencode.ai/config.json"}')
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+            result = runner.invoke(cli, ["opencode", "setup", "--yes", "--no-tasks"])
+
+        assert result.exit_code == 0
+
+        updated_config = json.loads(config_file.read_text())
+        assert "sugar-tasks" not in updated_config["mcp"]
+        assert "sugar-memory" in updated_config["mcp"]
+
+    def test_setup_malformed_json_error(self, tmp_path):
+        """Test error handling for malformed JSON config"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+
+        # Create a malformed config
+        config_dir = tmp_path / ".config" / "opencode"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "opencode.json"
+        config_file.write_text('{ invalid json }')
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+            result = runner.invoke(cli, ["opencode", "setup"])
+
+        assert result.exit_code == 1
+        assert "Failed to parse config file" in result.output
+
+    def test_setup_parses_jsonc(self, tmp_path):
+        """Test that setup can parse JSONC (JSON with comments)"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+        import json
+
+        # Create a JSONC config with comments
+        config_dir = tmp_path / ".config" / "opencode"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "opencode.json"
+        jsonc_content = '''{
+  // This is a comment
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["test"], // trailing comment
+}'''
+        config_file.write_text(jsonc_content)
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}):
+            result = runner.invoke(cli, ["opencode", "setup", "--yes"])
+
+        assert result.exit_code == 0
+        assert "Config updated" in result.output
+
+    def test_setup_custom_config_path(self, tmp_path):
+        """Test --config option for custom config path"""
+        from click.testing import CliRunner
+        from sugar.main import cli
+        import json
+
+        # Create config in non-standard location
+        custom_config = tmp_path / "my-opencode-config.json"
+        custom_config.write_text('{"$schema": "https://opencode.ai/config.json"}')
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["opencode", "setup", "--yes", "--config", str(custom_config)])
+
+        assert result.exit_code == 0
+
+        updated_config = json.loads(custom_config.read_text())
+        assert "sugar-tasks" in updated_config["mcp"]

@@ -5,7 +5,57 @@ All notable changes to the Sugar autonomous development system will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.5.0] - Unreleased
+## [3.7.0] - Unreleased
+
+### 🔗 MINOR RELEASE: OpenCode Integration Improvements
+
+One-command setup for OpenCode integration and new memory slash commands.
+
+### Added
+
+#### OpenCode Setup Command
+- **`sugar opencode setup`** - One-command configuration for OpenCode
+  - Auto-detects OpenCode config file location
+  - Adds `sugar-tasks` and `sugar-memory` MCP servers
+  - Supports `--dry-run`, `--yes`, `--no-memory`, `--no-tasks` flags
+  - Parses JSON/JSONC safely, preserves existing configuration
+  - Idempotent - safe to run multiple times
+
+#### Memory Slash Commands for OpenCode
+- **`/sugar-remember`** - Store learnings, decisions, preferences in Sugar memory
+- **`/sugar-recall`** - Search memory for relevant context
+- **`/sugar-context`** - Load full project context at session start
+
+### Changed
+
+#### Improved Error Messages
+- OpenCode client now properly distinguishes connection errors from server errors
+- "Cannot connect to OpenCode server" instead of misleading "Server responded but health check failed"
+- `health_check()` and `notify()` now propagate connection errors for proper handling
+
+### Documentation
+- Updated README with new `sugar opencode setup` command
+- Updated `docs/user/opencode.md` with complete setup guide
+- Updated static site documentation at sugar.roboticforce.io
+
+---
+
+## [3.6.0] - 2025-01-20
+
+### 🔌 MINOR RELEASE: OpenCode Integration
+
+Full integration with OpenCode via HTTP API, notifications, and memory injection.
+
+### Added
+- OpenCode HTTP client for bidirectional communication
+- Task notifications (start, complete, fail) to OpenCode TUI
+- Memory injection into OpenCode sessions
+- Event subscription via SSE
+- CLI commands: `sugar opencode status`, `sugar opencode test`, `sugar opencode notify`
+
+---
+
+## [3.5.0] - 2025-01-15
 
 ### 🧠 MINOR RELEASE: Memory System
 
