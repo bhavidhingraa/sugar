@@ -19,10 +19,12 @@ logger = logging.getLogger(__name__)
 # Check for FastMCP availability
 try:
     from mcp.server.fastmcp import FastMCP
+
     FASTMCP_AVAILABLE = True
 except ImportError:
     try:
         from fastmcp import FastMCP
+
         FASTMCP_AVAILABLE = True
     except ImportError:
         FASTMCP_AVAILABLE = False
@@ -90,7 +92,9 @@ def create_memory_mcp_server() -> "FastMCP":
                     "type": r.entry.memory_type.value,
                     "score": round(r.score, 3),
                     "id": r.entry.id[:8],
-                    "created_at": r.entry.created_at.isoformat() if r.entry.created_at else None,
+                    "created_at": (
+                        r.entry.created_at.isoformat() if r.entry.created_at else None
+                    ),
                 }
                 for r in results
             ]
@@ -153,7 +157,9 @@ def create_memory_mcp_server() -> "FastMCP":
                 "status": "stored",
                 "id": entry_id[:8],
                 "type": mem_type.value,
-                "content_preview": content[:100] + "..." if len(content) > 100 else content,
+                "content_preview": (
+                    content[:100] + "..." if len(content) > 100 else content
+                ),
             }
         except Exception as e:
             logger.error(f"store_learning failed: {e}")
@@ -254,7 +260,9 @@ def create_memory_mcp_server() -> "FastMCP":
                 {
                     "id": e.id[:8],
                     "type": e.memory_type.value,
-                    "content": e.content[:200] + "..." if len(e.content) > 200 else e.content,
+                    "content": (
+                        e.content[:200] + "..." if len(e.content) > 200 else e.content
+                    ),
                     "created_at": e.created_at.isoformat() if e.created_at else None,
                 }
                 for e in entries
@@ -280,7 +288,11 @@ def create_memory_mcp_server() -> "FastMCP":
             output = retriever.format_context_markdown(context)
             store.close()
 
-            return output if output else "# No project context available yet\n\nUse `store_learning` to add memories."
+            return (
+                output
+                if output
+                else "# No project context available yet\n\nUse `store_learning` to add memories."
+            )
         except Exception as e:
             return f"# Error loading project context\n\n{e}"
 

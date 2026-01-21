@@ -131,6 +131,7 @@ def is_semantic_search_available() -> bool:
     """Check if semantic search (embeddings) is available."""
     try:
         from sentence_transformers import SentenceTransformer  # noqa: F401
+
         return True
     except ImportError:
         return False

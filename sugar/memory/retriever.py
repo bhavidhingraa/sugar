@@ -198,7 +198,11 @@ class MemoryRetriever:
             "id": entry.id,
             "content": entry.content,
             "summary": entry.summary,
-            "type": entry.memory_type.value if isinstance(entry.memory_type, MemoryType) else entry.memory_type,
+            "type": (
+                entry.memory_type.value
+                if isinstance(entry.memory_type, MemoryType)
+                else entry.memory_type
+            ),
             "created_at": entry.created_at.isoformat() if entry.created_at else None,
             "metadata": entry.metadata,
         }

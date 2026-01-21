@@ -33,7 +33,10 @@ def __getattr__(name: str):
                     _lazy_imports["SugarMCPServer"] = SugarMCPServer
                     _lazy_imports["create_server"] = create_server
                 elif name in ("create_memory_mcp_server", "run_memory_server"):
-                    from .memory_server import create_memory_mcp_server, run_memory_server
+                    from .memory_server import (
+                        create_memory_mcp_server,
+                        run_memory_server,
+                    )
 
                     _lazy_imports["create_memory_mcp_server"] = create_memory_mcp_server
                     _lazy_imports["run_memory_server"] = run_memory_server

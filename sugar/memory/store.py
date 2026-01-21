@@ -21,12 +21,14 @@ logger = logging.getLogger(__name__)
 def _serialize_embedding(embedding: List[float]) -> bytes:
     """Serialize embedding to bytes for sqlite-vec."""
     import struct
+
     return struct.pack(f"{len(embedding)}f", *embedding)
 
 
 def _deserialize_embedding(data: bytes) -> List[float]:
     """Deserialize embedding from bytes."""
     import struct
+
     count = len(data) // 4  # 4 bytes per float
     return list(struct.unpack(f"{count}f", data))
 
@@ -64,6 +66,7 @@ class MemoryStore:
         """Check if sqlite-vec extension is available."""
         try:
             import sqlite_vec  # noqa: F401
+
             return True
         except ImportError:
             logger.info("sqlite-vec not available, using FTS5 fallback")
@@ -78,6 +81,7 @@ class MemoryStore:
             if self._has_vec:
                 try:
                     import sqlite_vec
+
                     self._conn.enable_load_extension(True)
                     sqlite_vec.load(self._conn)
                     self._conn.enable_load_extension(False)
@@ -93,7 +97,8 @@ class MemoryStore:
         cursor = conn.cursor()
 
         # Main memory entries table
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS memory_entries (
                 id TEXT PRIMARY KEY,
                 memory_type TEXT NOT NULL,
@@ -107,24 +112,32 @@ class MemoryStore:
                 access_count INTEGER DEFAULT 0,
                 expires_at TIMESTAMP
             )
-        """)
+        """
+        )
 
         # Indexes
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_memory_type
             ON memory_entries(memory_type)
-        """)
-        cursor.execute("""
+        """
+        )
+        cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_memory_importance
             ON memory_entries(importance DESC)
-        """)
-        cursor.execute("""
+        """
+        )
+        cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_memory_created
             ON memory_entries(created_at DESC)
-        """)
+        """
+        )
 
         # FTS5 for keyword search (always available)
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
                 id,
                 content,
@@ -132,39 +145,48 @@ class MemoryStore:
                 content='memory_entries',
                 content_rowid='rowid'
             )
-        """)
+        """
+        )
 
         # Triggers to keep FTS in sync
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TRIGGER IF NOT EXISTS memory_ai AFTER INSERT ON memory_entries BEGIN
                 INSERT INTO memory_fts(rowid, id, content, summary)
                 VALUES (new.rowid, new.id, new.content, new.summary);
             END
-        """)
-        cursor.execute("""
+        """
+        )
+        cursor.execute(
+            """
             CREATE TRIGGER IF NOT EXISTS memory_ad AFTER DELETE ON memory_entries BEGIN
                 INSERT INTO memory_fts(memory_fts, rowid, id, content, summary)
                 VALUES ('delete', old.rowid, old.id, old.content, old.summary);
             END
-        """)
-        cursor.execute("""
+        """
+        )
+        cursor.execute(
+            """
             CREATE TRIGGER IF NOT EXISTS memory_au AFTER UPDATE ON memory_entries BEGIN
                 INSERT INTO memory_fts(memory_fts, rowid, id, content, summary)
                 VALUES ('delete', old.rowid, old.id, old.content, old.summary);
                 INSERT INTO memory_fts(rowid, id, content, summary)
                 VALUES (new.rowid, new.id, new.content, new.summary);
             END
-        """)
+        """
+        )
 
         # Vector storage table (if sqlite-vec available)
         if self._has_vec:
             try:
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     CREATE VIRTUAL TABLE IF NOT EXISTS memory_vectors USING vec0(
                         id TEXT PRIMARY KEY,
                         embedding float[{EMBEDDING_DIM}]
                     )
-                """)
+                """
+                )
             except Exception as e:
                 logger.warning(f"Failed to create vector table: {e}")
                 self._has_vec = False
@@ -191,34 +213,44 @@ class MemoryStore:
         cursor = conn.cursor()
 
         # Store main entry
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT OR REPLACE INTO memory_entries
             (id, memory_type, source_id, content, summary, metadata,
              importance, created_at, last_accessed_at, access_count, expires_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            entry.id,
-            entry.memory_type.value if isinstance(entry.memory_type, MemoryType) else entry.memory_type,
-            entry.source_id,
-            entry.content,
-            entry.summary,
-            json.dumps(entry.metadata) if entry.metadata else None,
-            entry.importance,
-            entry.created_at.isoformat() if entry.created_at else None,
-            entry.last_accessed_at.isoformat() if entry.last_accessed_at else None,
-            entry.access_count,
-            entry.expires_at.isoformat() if entry.expires_at else None,
-        ))
+        """,
+            (
+                entry.id,
+                (
+                    entry.memory_type.value
+                    if isinstance(entry.memory_type, MemoryType)
+                    else entry.memory_type
+                ),
+                entry.source_id,
+                entry.content,
+                entry.summary,
+                json.dumps(entry.metadata) if entry.metadata else None,
+                entry.importance,
+                entry.created_at.isoformat() if entry.created_at else None,
+                entry.last_accessed_at.isoformat() if entry.last_accessed_at else None,
+                entry.access_count,
+                entry.expires_at.isoformat() if entry.expires_at else None,
+            ),
+        )
 
         # Generate and store embedding if we have semantic search
         if self._has_vec and not isinstance(self.embedder, FallbackEmbedder):
             try:
                 embedding = self.embedder.embed(entry.content)
                 if embedding:
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         INSERT OR REPLACE INTO memory_vectors (id, embedding)
                         VALUES (?, ?)
-                    """, (entry.id, _serialize_embedding(embedding)))
+                    """,
+                        (entry.id, _serialize_embedding(embedding)),
+                    )
             except Exception as e:
                 logger.warning(f"Failed to store embedding: {e}")
 
@@ -230,9 +262,12 @@ class MemoryStore:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT * FROM memory_entries WHERE id = ?
-        """, (entry_id,))
+        """,
+            (entry_id,),
+        )
 
         row = cursor.fetchone()
         if row:
@@ -286,14 +321,21 @@ class MemoryStore:
         if query.memory_types:
             placeholders = ",".join("?" * len(query.memory_types))
             where_clauses.append(f"e.memory_type IN ({placeholders})")
-            params.extend([t.value if isinstance(t, MemoryType) else t for t in query.memory_types])
+            params.extend(
+                [
+                    t.value if isinstance(t, MemoryType) else t
+                    for t in query.memory_types
+                ]
+            )
 
         if query.min_importance > 0:
             where_clauses.append("e.importance >= ?")
             params.append(query.min_importance)
 
         if not query.include_expired:
-            where_clauses.append("(e.expires_at IS NULL OR e.expires_at > datetime('now'))")
+            where_clauses.append(
+                "(e.expires_at IS NULL OR e.expires_at > datetime('now'))"
+            )
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -307,7 +349,10 @@ class MemoryStore:
                 ORDER BY v.embedding <-> ?
                 LIMIT ?
             """
-            params_with_query = params + [_serialize_embedding(query_embedding), query.limit]
+            params_with_query = params + [
+                _serialize_embedding(query_embedding),
+                query.limit,
+            ]
             cursor.execute(sql, params_with_query)
         except Exception as e:
             logger.warning(f"Vector search failed: {e}")
@@ -319,7 +364,9 @@ class MemoryStore:
             # Convert distance to similarity score (0-1)
             distance = row["distance"] if "distance" in row.keys() else 0
             score = max(0, 1 - distance / 2)  # Normalize
-            results.append(MemorySearchResult(entry=entry, score=score, match_type="semantic"))
+            results.append(
+                MemorySearchResult(entry=entry, score=score, match_type="semantic")
+            )
 
             # Update access stats
             self._update_access(entry.id)
@@ -338,14 +385,21 @@ class MemoryStore:
         if query.memory_types:
             placeholders = ",".join("?" * len(query.memory_types))
             where_clauses.append(f"e.memory_type IN ({placeholders})")
-            params.extend([t.value if isinstance(t, MemoryType) else t for t in query.memory_types])
+            params.extend(
+                [
+                    t.value if isinstance(t, MemoryType) else t
+                    for t in query.memory_types
+                ]
+            )
 
         if query.min_importance > 0:
             where_clauses.append("e.importance >= ?")
             params.append(query.min_importance)
 
         if not query.include_expired:
-            where_clauses.append("(e.expires_at IS NULL OR e.expires_at > datetime('now'))")
+            where_clauses.append(
+                "(e.expires_at IS NULL OR e.expires_at > datetime('now'))"
+            )
 
         where_sql = f"AND {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -384,7 +438,11 @@ class MemoryStore:
             score = abs(row["score"]) if "score" in row.keys() else 0.5
             # Normalize BM25 score to 0-1 range
             normalized_score = min(1.0, score / 10)
-            results.append(MemorySearchResult(entry=entry, score=normalized_score, match_type="keyword"))
+            results.append(
+                MemorySearchResult(
+                    entry=entry, score=normalized_score, match_type="keyword"
+                )
+            )
 
             # Update access stats
             self._update_access(entry.id)
@@ -407,7 +465,11 @@ class MemoryStore:
 
         if memory_type:
             where_clauses.append("memory_type = ?")
-            params.append(memory_type.value if isinstance(memory_type, MemoryType) else memory_type)
+            params.append(
+                memory_type.value
+                if isinstance(memory_type, MemoryType)
+                else memory_type
+            )
 
         if since_days:
             where_clauses.append("created_at >= datetime('now', ?)")
@@ -426,7 +488,9 @@ class MemoryStore:
         cursor.execute(sql, params)
         return [self._row_to_entry(row) for row in cursor.fetchall()]
 
-    def get_by_type(self, memory_type: MemoryType, limit: int = 50) -> List[MemoryEntry]:
+    def get_by_type(
+        self, memory_type: MemoryType, limit: int = 50
+    ) -> List[MemoryEntry]:
         """Get all memories of a specific type."""
         return self.list_memories(memory_type=memory_type, limit=limit)
 
@@ -438,7 +502,13 @@ class MemoryStore:
         if memory_type:
             cursor.execute(
                 "SELECT COUNT(*) FROM memory_entries WHERE memory_type = ?",
-                (memory_type.value if isinstance(memory_type, MemoryType) else memory_type,)
+                (
+                    (
+                        memory_type.value
+                        if isinstance(memory_type, MemoryType)
+                        else memory_type
+                    ),
+                ),
             )
         else:
             cursor.execute("SELECT COUNT(*) FROM memory_entries")
@@ -449,12 +519,15 @@ class MemoryStore:
         """Update access statistics for an entry."""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE memory_entries
             SET last_accessed_at = datetime('now'),
                 access_count = access_count + 1
             WHERE id = ?
-        """, (entry_id,))
+        """,
+            (entry_id,),
+        )
         conn.commit()
 
     def _row_to_entry(self, row: sqlite3.Row) -> MemoryEntry:
@@ -504,27 +577,34 @@ class MemoryStore:
         cursor = conn.cursor()
 
         # Get IDs to delete (for vector cleanup)
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id FROM memory_entries
             WHERE expires_at IS NOT NULL AND expires_at < datetime('now')
-        """)
+        """
+        )
         expired_ids = [row["id"] for row in cursor.fetchall()]
 
         if not expired_ids:
             return 0
 
         # Delete from main table
-        cursor.execute("""
+        cursor.execute(
+            """
             DELETE FROM memory_entries
             WHERE expires_at IS NOT NULL AND expires_at < datetime('now')
-        """)
+        """
+        )
         deleted = cursor.rowcount
 
         # Clean up vectors
         if self._has_vec and expired_ids:
             placeholders = ",".join("?" * len(expired_ids))
             try:
-                cursor.execute(f"DELETE FROM memory_vectors WHERE id IN ({placeholders})", expired_ids)
+                cursor.execute(
+                    f"DELETE FROM memory_vectors WHERE id IN ({placeholders})",
+                    expired_ids,
+                )
             except Exception:
                 pass
 

@@ -183,9 +183,15 @@ class TestMemoryStore:
         from sugar.memory import MemoryEntry, MemoryType
 
         entries = [
-            MemoryEntry(id="list-1", memory_type=MemoryType.PREFERENCE, content="Prefer async"),
-            MemoryEntry(id="list-2", memory_type=MemoryType.DECISION, content="Use JWT"),
-            MemoryEntry(id="list-3", memory_type=MemoryType.PREFERENCE, content="No callbacks"),
+            MemoryEntry(
+                id="list-1", memory_type=MemoryType.PREFERENCE, content="Prefer async"
+            ),
+            MemoryEntry(
+                id="list-2", memory_type=MemoryType.DECISION, content="Use JWT"
+            ),
+            MemoryEntry(
+                id="list-3", memory_type=MemoryType.PREFERENCE, content="No callbacks"
+            ),
         ]
 
         for entry in entries:
@@ -204,8 +210,12 @@ class TestMemoryStore:
         from sugar.memory import MemoryEntry, MemoryType
 
         entries = [
-            MemoryEntry(id="count-1", memory_type=MemoryType.PREFERENCE, content="Pref 1"),
-            MemoryEntry(id="count-2", memory_type=MemoryType.PREFERENCE, content="Pref 2"),
+            MemoryEntry(
+                id="count-1", memory_type=MemoryType.PREFERENCE, content="Pref 1"
+            ),
+            MemoryEntry(
+                id="count-2", memory_type=MemoryType.PREFERENCE, content="Pref 2"
+            ),
             MemoryEntry(id="count-3", memory_type=MemoryType.DECISION, content="Dec 1"),
         ]
 
@@ -221,9 +231,21 @@ class TestMemoryStore:
         from sugar.memory import MemoryEntry, MemoryQuery, MemoryType
 
         entries = [
-            MemoryEntry(id="search-1", memory_type=MemoryType.DECISION, content="Use JWT tokens for authentication"),
-            MemoryEntry(id="search-2", memory_type=MemoryType.DECISION, content="PostgreSQL for the main database"),
-            MemoryEntry(id="search-3", memory_type=MemoryType.ERROR_PATTERN, content="Auth redirect loop fixed by return"),
+            MemoryEntry(
+                id="search-1",
+                memory_type=MemoryType.DECISION,
+                content="Use JWT tokens for authentication",
+            ),
+            MemoryEntry(
+                id="search-2",
+                memory_type=MemoryType.DECISION,
+                content="PostgreSQL for the main database",
+            ),
+            MemoryEntry(
+                id="search-3",
+                memory_type=MemoryType.ERROR_PATTERN,
+                content="Auth redirect loop fixed by return",
+            ),
         ]
 
         for entry in entries:
@@ -375,6 +397,7 @@ class TestMemoryCLI:
         }
 
         import yaml
+
         with open(sugar_dir / "config.yaml", "w") as f:
             yaml.dump(config, f)
 
@@ -389,14 +412,20 @@ class TestMemoryCLI:
 
         with runner.isolated_filesystem(temp_dir=project_dir.parent):
             import os
+
             os.chdir(project_dir)
 
-            result = runner.invoke(cli, [
-                "--config", str(project_dir / ".sugar" / "config.yaml"),
-                "remember",
-                "Always use type hints in Python",
-                "--type", "preference"
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "--config",
+                    str(project_dir / ".sugar" / "config.yaml"),
+                    "remember",
+                    "Always use type hints in Python",
+                    "--type",
+                    "preference",
+                ],
+            )
 
             # May fail if memory dependencies not installed, which is fine
             if "Memory dependencies not installed" not in result.output:
@@ -410,12 +439,13 @@ class TestMemoryCLI:
 
         with runner.isolated_filesystem(temp_dir=project_dir.parent):
             import os
+
             os.chdir(project_dir)
 
-            result = runner.invoke(cli, [
-                "--config", str(project_dir / ".sugar" / "config.yaml"),
-                "memories"
-            ])
+            result = runner.invoke(
+                cli,
+                ["--config", str(project_dir / ".sugar" / "config.yaml"), "memories"],
+            )
 
             # Should work even with no memories
             if "Memory dependencies not installed" not in result.output:
@@ -429,13 +459,18 @@ class TestMemoryCLI:
 
         with runner.isolated_filesystem(temp_dir=project_dir.parent):
             import os
+
             os.chdir(project_dir)
 
-            result = runner.invoke(cli, [
-                "--config", str(project_dir / ".sugar" / "config.yaml"),
-                "recall",
-                "authentication"
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "--config",
+                    str(project_dir / ".sugar" / "config.yaml"),
+                    "recall",
+                    "authentication",
+                ],
+            )
 
             if "Memory dependencies not installed" not in result.output:
                 # With empty store, should report no results
@@ -449,12 +484,17 @@ class TestMemoryCLI:
 
         with runner.isolated_filesystem(temp_dir=project_dir.parent):
             import os
+
             os.chdir(project_dir)
 
-            result = runner.invoke(cli, [
-                "--config", str(project_dir / ".sugar" / "config.yaml"),
-                "export-context"
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "--config",
+                    str(project_dir / ".sugar" / "config.yaml"),
+                    "export-context",
+                ],
+            )
 
             # Should not crash, even without memories
             assert result.exit_code == 0
@@ -467,12 +507,17 @@ class TestMemoryCLI:
 
         with runner.isolated_filesystem(temp_dir=project_dir.parent):
             import os
+
             os.chdir(project_dir)
 
-            result = runner.invoke(cli, [
-                "--config", str(project_dir / ".sugar" / "config.yaml"),
-                "memory-stats"
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "--config",
+                    str(project_dir / ".sugar" / "config.yaml"),
+                    "memory-stats",
+                ],
+            )
 
             if "Memory dependencies not installed" not in result.output:
                 assert "Memory Statistics" in result.output or result.exit_code == 0

@@ -40,14 +40,20 @@ class MemoryEntry:
         """Convert to dictionary for storage."""
         return {
             "id": self.id,
-            "memory_type": self.memory_type.value if isinstance(self.memory_type, MemoryType) else self.memory_type,
+            "memory_type": (
+                self.memory_type.value
+                if isinstance(self.memory_type, MemoryType)
+                else self.memory_type
+            ),
             "content": self.content,
             "summary": self.summary,
             "source_id": self.source_id,
             "metadata": self.metadata,
             "importance": self.importance,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "last_accessed_at": self.last_accessed_at.isoformat() if self.last_accessed_at else None,
+            "last_accessed_at": (
+                self.last_accessed_at.isoformat() if self.last_accessed_at else None
+            ),
             "access_count": self.access_count,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
         }

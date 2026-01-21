@@ -3843,7 +3843,16 @@ def _get_memory_store(config: dict):
 @click.option(
     "--type",
     "memory_type",
-    type=click.Choice(["decision", "preference", "research", "file_context", "error_pattern", "outcome"]),
+    type=click.Choice(
+        [
+            "decision",
+            "preference",
+            "research",
+            "file_context",
+            "error_pattern",
+            "outcome",
+        ]
+    ),
     default="decision",
     help="Type of memory",
 )
@@ -3854,7 +3863,9 @@ def _get_memory_store(config: dict):
     default="never",
     help="Time to live: 30d, 90d, 1y, never (default: never)",
 )
-@click.option("--importance", type=float, default=1.0, help="Importance score (0.0-2.0)")
+@click.option(
+    "--importance", type=float, default=1.0, help="Importance score (0.0-2.0)"
+)
 @click.pass_context
 def remember(ctx, content, memory_type, tags, file_path, ttl, importance):
     """Store a memory for future reference
@@ -3928,7 +3939,17 @@ def remember(ctx, content, memory_type, tags, file_path, ttl, importance):
 @click.option(
     "--type",
     "memory_type",
-    type=click.Choice(["decision", "preference", "research", "file_context", "error_pattern", "outcome", "all"]),
+    type=click.Choice(
+        [
+            "decision",
+            "preference",
+            "research",
+            "file_context",
+            "error_pattern",
+            "outcome",
+            "all",
+        ]
+    ),
     default="all",
     help="Filter by memory type",
 )
@@ -3977,13 +3998,16 @@ def recall(ctx, query, memory_type, limit, output_format):
 
         if output_format == "json":
             import json
+
             output = [
                 {
                     "id": r.entry.id,
                     "content": r.entry.content,
                     "type": r.entry.memory_type.value,
                     "score": round(r.score, 3),
-                    "created_at": r.entry.created_at.isoformat() if r.entry.created_at else None,
+                    "created_at": (
+                        r.entry.created_at.isoformat() if r.entry.created_at else None
+                    ),
                 }
                 for r in results
             ]
@@ -3991,9 +4015,13 @@ def recall(ctx, query, memory_type, limit, output_format):
         elif output_format == "full":
             for i, r in enumerate(results, 1):
                 click.echo(f"\n{'='*60}")
-                click.echo(f"[{i}] {r.entry.memory_type.value.upper()} (score: {r.score:.2f})")
+                click.echo(
+                    f"[{i}] {r.entry.memory_type.value.upper()} (score: {r.score:.2f})"
+                )
                 click.echo(f"ID: {r.entry.id}")
-                click.echo(f"Created: {r.entry.created_at.strftime('%Y-%m-%d %H:%M') if r.entry.created_at else 'unknown'}")
+                click.echo(
+                    f"Created: {r.entry.created_at.strftime('%Y-%m-%d %H:%M') if r.entry.created_at else 'unknown'}"
+                )
                 click.echo(f"\n{r.entry.content}")
                 if r.entry.metadata.get("tags"):
                     click.echo(f"\nTags: {', '.join(r.entry.metadata['tags'])}")
@@ -4004,9 +4032,15 @@ def recall(ctx, query, memory_type, limit, output_format):
             click.echo(f"{'Score':<8} {'Type':<15} {'Content':<55}")
             click.echo("-" * 80)
             for r in results:
-                content = r.entry.content[:52] + "..." if len(r.entry.content) > 55 else r.entry.content
+                content = (
+                    r.entry.content[:52] + "..."
+                    if len(r.entry.content) > 55
+                    else r.entry.content
+                )
                 content = content.replace("\n", " ")
-                click.echo(f"{r.score:.2f}    {r.entry.memory_type.value:<15} {content:<55}")
+                click.echo(
+                    f"{r.score:.2f}    {r.entry.memory_type.value:<15} {content:<55}"
+                )
             click.echo(f"\n{len(results)} memories found ({r.match_type} search)")
 
     except ImportError as e:
@@ -4026,7 +4060,17 @@ def recall(ctx, query, memory_type, limit, output_format):
 @click.option(
     "--type",
     "memory_type",
-    type=click.Choice(["decision", "preference", "research", "file_context", "error_pattern", "outcome", "all"]),
+    type=click.Choice(
+        [
+            "decision",
+            "preference",
+            "research",
+            "file_context",
+            "error_pattern",
+            "outcome",
+            "all",
+        ]
+    ),
     default="all",
     help="Filter by memory type",
 )
@@ -4068,7 +4112,10 @@ def memories(ctx, memory_type, since, limit, output_format):
             elif unit == "m":
                 since_days = value * 30
             else:
-                click.echo(f"❌ Invalid time format: {since}. Use format like 7d, 2w, 1m", err=True)
+                click.echo(
+                    f"❌ Invalid time format: {since}. Use format like 7d, 2w, 1m",
+                    err=True,
+                )
                 sys.exit(1)
 
         # Get memories
@@ -4086,6 +4133,7 @@ def memories(ctx, memory_type, since, limit, output_format):
 
         if output_format == "json":
             import json
+
             output = [e.to_dict() for e in entries]
             click.echo(json.dumps(output, indent=2))
         else:  # table
@@ -4094,8 +4142,12 @@ def memories(ctx, memory_type, since, limit, output_format):
             for e in entries:
                 content = e.content[:37] + "..." if len(e.content) > 40 else e.content
                 content = content.replace("\n", " ")
-                created = e.created_at.strftime("%Y-%m-%d") if e.created_at else "unknown"
-                click.echo(f"{e.id[:8]:<10} {e.memory_type.value:<15} {created:<12} {content:<40}")
+                created = (
+                    e.created_at.strftime("%Y-%m-%d") if e.created_at else "unknown"
+                )
+                click.echo(
+                    f"{e.id[:8]:<10} {e.memory_type.value:<15} {created:<12} {content:<40}"
+                )
             click.echo(f"\n{len(entries)} memories")
 
             # Show counts by type
@@ -4149,7 +4201,9 @@ def forget(ctx, memory_id, force):
             if len(matches) == 1:
                 entry = matches[0]
             elif len(matches) > 1:
-                click.echo(f"❌ Ambiguous ID '{memory_id}' matches {len(matches)} memories:")
+                click.echo(
+                    f"❌ Ambiguous ID '{memory_id}' matches {len(matches)} memories:"
+                )
                 for m in matches[:5]:
                     click.echo(f"   {m.id[:12]} - {m.content[:40]}...")
                 store.close()
@@ -4165,7 +4219,9 @@ def forget(ctx, memory_id, force):
             click.echo(f"\nMemory to delete:")
             click.echo(f"  ID: {entry.id}")
             click.echo(f"  Type: {entry.memory_type.value}")
-            click.echo(f"  Content: {entry.content[:100]}{'...' if len(entry.content) > 100 else ''}")
+            click.echo(
+                f"  Content: {entry.content[:100]}{'...' if len(entry.content) > 100 else ''}"
+            )
             if not click.confirm("\nDelete this memory?"):
                 click.echo("Cancelled")
                 store.close()
@@ -4262,6 +4318,7 @@ def export_context(ctx, output_format, limit, types):
 
         if output_format == "json":
             import json
+
             click.echo(json.dumps(filtered_context, indent=2))
         elif output_format == "claude":
             # Compact format optimized for Claude's context window
@@ -4307,7 +4364,9 @@ def memory_stats(ctx):
 
         # Check capabilities
         semantic_available = is_semantic_search_available()
-        click.echo(f"Semantic search: {'✅ Available' if semantic_available else '❌ Not available (using keyword search)'}")
+        click.echo(
+            f"Semantic search: {'✅ Available' if semantic_available else '❌ Not available (using keyword search)'}"
+        )
         click.echo(f"Database: {store.db_path}")
         click.echo("")
 
@@ -4324,6 +4383,7 @@ def memory_stats(ctx):
 
         # Database size
         import os
+
         if store.db_path.exists():
             size_bytes = os.path.getsize(store.db_path)
             if size_bytes < 1024:
