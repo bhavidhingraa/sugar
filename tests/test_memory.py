@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-
 # ============================================================================
 # Unit Tests - Memory Types
 # ============================================================================

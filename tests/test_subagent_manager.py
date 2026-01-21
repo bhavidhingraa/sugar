@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, patch, Mock
 from sugar.agent.base import SugarAgentConfig, AgentResponse
 from sugar.agent.subagent_manager import SubAgentManager, SubAgentResult
 
-
 # ============================================================================
 # Test Fixtures
 # ============================================================================
