@@ -23,6 +23,28 @@ class GitOperations:
     async def create_branch(self, branch_name: str, base_branch: str = "main") -> bool:
         """Create and checkout a new branch"""
         try:
+            # Check if branch already exists (locally or remotely)
+            local_branches = await self._run_git_command(["branch", "--list", branch_name])
+            remote_branches = await self._run_git_command(["branch", "-r", "--list", f"origin/{branch_name}"])
+
+            branch_exists = (
+                local_branches["returncode"] == 0 and branch_name in local_branches["stdout"]
+            ) or (
+                remote_branches["returncode"] == 0 and f"origin/{branch_name}" in remote_branches["stdout"]
+            )
+
+            if branch_exists:
+                # Branch exists - check it out and optionally reset to base
+                logger.info(f"ℹ️ Branch {branch_name} already exists, checking it out")
+                result = await self._run_git_command(["checkout", branch_name])
+                if result["returncode"] == 0:
+                    # Pull latest changes from remote if they exist
+                    await self._run_git_command(["pull", "origin", branch_name])
+                    return True
+                else:
+                    logger.error(f"Failed to checkout existing branch {branch_name}: {result['stderr']}")
+                    return False
+
             # Ensure we're on the base branch and it's up to date
             await self._run_git_command(["checkout", base_branch])
             await self._run_git_command(["pull", "origin", base_branch])

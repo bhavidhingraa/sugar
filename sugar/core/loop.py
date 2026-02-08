@@ -46,11 +46,6 @@ class SugarLoop:
         # Initialize git operations
         self.git_ops = GitOperations()
 
-        # Initialize workflow orchestrator
-        self.workflow_orchestrator = WorkflowOrchestrator(
-            self.config, self.git_ops, self.work_queue
-        )
-
         # Initialize work discovery modules
         self.discovery_modules = []
 
@@ -63,10 +58,17 @@ class SugarLoop:
             self.discovery_modules.append(error_monitor)
 
         # GitHub integration
+        self.github_watcher = None
         if self.config["sugar"]["discovery"].get("github", {}).get("enabled", False):
-            self.discovery_modules.append(
-                GitHubWatcher(self.config["sugar"]["discovery"]["github"])
+            self.github_watcher = GitHubWatcher(
+                self.config["sugar"]["discovery"]["github"]
             )
+            self.discovery_modules.append(self.github_watcher)
+
+        # Initialize workflow orchestrator (after github_watcher is created)
+        self.workflow_orchestrator = WorkflowOrchestrator(
+            self.config, self.git_ops, self.work_queue, self.github_watcher
+        )
 
         # Code quality scanning
         if (
@@ -372,11 +374,19 @@ class SugarLoop:
                 )
 
                 if not workflow_success:
-                    logger.warning(
-                        f"⚠️ Workflow completion had issues for [{work_item['id']}]"
+                    # Workflow failed - mark work item as failed, not completed
+                    execution_time = (
+                        datetime.now(timezone.utc) - start_time
+                    ).total_seconds()
+                    error_msg = "Workflow completion failed: commit, push, or PR creation failed"
+                    logger.error(f"❌ {error_msg} [{work_item['id']}]")
+                    await self.work_queue.fail_work(
+                        work_item["id"], error_msg, execution_time=execution_time
                     )
+                    await self._handle_failed_workflow(work_item, workflow, error_msg)
+                    return
 
-                # Update work item with result
+                # Update work item with result (only reached if workflow succeeded)
                 await self.work_queue.complete_work(work_item["id"], result)
 
                 # Handle GitHub issue updates if needed (for GitHub-sourced work)
@@ -1219,10 +1229,7 @@ class SugarLoop:
 
     def _get_github_watcher(self) -> Optional[GitHubWatcher]:
         """Get the GitHub watcher module"""
-        for module in self.discovery_modules:
-            if isinstance(module, GitHubWatcher):
-                return module
-        return None
+        return self.github_watcher
 
     async def health_check(self) -> dict:
         """Return system health status"""

@@ -23,10 +23,11 @@ class WorkflowType(Enum):
 class WorkflowOrchestrator:
     """Manages consistent workflows for all Sugar work items"""
 
-    def __init__(self, config: Dict[str, Any], git_ops=None, work_queue=None):
+    def __init__(self, config: Dict[str, Any], git_ops=None, work_queue=None, github_watcher=None):
         self.config = config
         self.git_ops = git_ops
         self.work_queue = work_queue
+        self.github_watcher = github_watcher
         self.workflow_config = self._load_workflow_config()
 
         # Initialize quality gates coordinator if enabled
@@ -96,8 +97,8 @@ class WorkflowOrchestrator:
 
     def get_workflow_for_work_item(self, work_item: Dict[str, Any]) -> Dict[str, Any]:
         """Determine appropriate workflow for a work item"""
-        source_type = work_item.get("source_type", "unknown")
-        work_type = work_item.get("work_type", "unknown")
+        source = work_item.get("source", work_item.get("source_type", "unknown"))
+        work_type = work_item.get("type", work_item.get("work_type", "unknown"))
         priority = work_item.get("priority", 3)
 
         workflow = {
@@ -111,7 +112,7 @@ class WorkflowOrchestrator:
         }
 
         # Handle GitHub-sourced work differently
-        if source_type == "github_watcher":
+        if source == "github_watcher":
             workflow["update_github_issue"] = True
             # Use existing GitHub workflow settings
             github_config = (
@@ -124,12 +125,12 @@ class WorkflowOrchestrator:
 
         # Apply source-specific overrides for solo profile
         elif self.workflow_config["profile"] == WorkflowProfile.SOLO:
-            if source_type in ["error_logs"] and priority >= 4:
+            if source in ["error_logs"] and priority >= 4:
                 # High priority errors might need different handling
                 workflow["commit_message_template"] = "fix: {title}"
 
         logger.debug(
-            f"🔄 Determined workflow for {source_type}/{work_type}: {workflow['git_workflow'].value}"
+            f"🔄 Determined workflow for {source}/{work_type}: {workflow['git_workflow'].value}"
         )
         return workflow
 
@@ -176,8 +177,11 @@ class WorkflowOrchestrator:
         """Prepare work item for execution with proper workflow"""
         workflow = self.get_workflow_for_work_item(work_item)
 
-        # Create branch if using PR workflow
-        if workflow["git_workflow"] == WorkflowType.PULL_REQUEST and self.git_ops:
+        # Check dry_run mode
+        dry_run = self.config.get("sugar", {}).get("dry_run", False)
+
+        # Create branch if using PR workflow (skip in dry_run)
+        if not dry_run and workflow["git_workflow"] == WorkflowType.PULL_REQUEST and self.git_ops:
             branch_name = self._generate_branch_name(work_item)
             workflow["branch_name"] = branch_name
 
@@ -195,6 +199,10 @@ class WorkflowOrchestrator:
                     f"⚠️ Branch creation failed, falling back to direct commit: {e}"
                 )
                 workflow["git_workflow"] = WorkflowType.DIRECT_COMMIT
+        elif dry_run and workflow["git_workflow"] == WorkflowType.PULL_REQUEST:
+            branch_name = self._generate_branch_name(work_item)
+            workflow["branch_name"] = branch_name
+            logger.info(f"🧪 DRY RUN: Would create branch: {branch_name}")
 
         return workflow
 
@@ -205,6 +213,17 @@ class WorkflowOrchestrator:
         execution_result: Dict[str, Any],
     ) -> bool:
         """Complete workflow after work execution"""
+
+        # Check dry_run mode - skip all git operations
+        dry_run = self.config.get("sugar", {}).get("dry_run", False)
+        if dry_run:
+            branch_name = workflow.get("branch_name")
+            if branch_name:
+                logger.info(f"🧪 DRY RUN: Would commit, push, and create PR for branch: {branch_name}")
+            else:
+                logger.info("🧪 DRY RUN: Would commit changes")
+            return True
+
         # Run self-verification before any completion steps (AUTO-005)
         if self.quality_gates and self.quality_gates.is_enabled():
             verification_passed = await self._run_self_verification(
@@ -306,7 +325,10 @@ class WorkflowOrchestrator:
                     push_success = await self.git_ops.push_branch(branch_name)
                     if push_success:
                         logger.info(f"📤 Pushed branch {branch_name}")
-                        # Note: PR creation would happen here in balanced/enterprise profiles
+                        # Create PR if configured and GitHub watcher is available
+                        await self._create_pull_request_if_enabled(
+                            work_item, workflow, branch_name
+                        )
                     else:
                         logger.error(f"❌ Failed to push branch {branch_name}")
                         return False
@@ -318,17 +340,121 @@ class WorkflowOrchestrator:
             logger.error(f"❌ Workflow completion failed: {e}")
             return False
 
+    async def _create_pull_request_if_enabled(
+        self, work_item: Dict[str, Any], workflow: Dict[str, Any], branch_name: str
+    ):
+        """Create pull request if enabled in config and GitHub watcher is available"""
+        if not self.github_watcher:
+            logger.debug("No GitHub watcher available for PR creation")
+            return
+
+        # Check if PR creation is enabled for GitHub-sourced work
+        github_config = (
+            self.config.get("sugar", {}).get("discovery", {}).get("github", {})
+        )
+        pr_config = github_config.get("workflow", {}).get("pull_request", {})
+
+        if not pr_config.get("auto_create", True):
+            logger.debug("PR auto-creation is disabled in config")
+            return
+
+        try:
+            # Get PR details
+            issue_number = work_item.get("context", {}).get("github_issue", {}).get("number")
+            work_title = work_item.get("title", "")
+            source = work_item.get("source", work_item.get("source_type", "unknown"))
+
+            if issue_number:
+                # GitHub-sourced work: use issue-based PR
+                issue_title = work_title.replace("Address GitHub issue: ", "")
+
+                # Format PR title
+                title_pattern = pr_config.get("title_pattern", "Fix #{issue_number}: {issue_title}")
+                variables = {"issue_number": issue_number, "issue_title": issue_title}
+                pr_title = self.git_ops.format_pr_title(title_pattern, variables)
+
+                # Create PR body
+                pr_body = f"Fixes #{issue_number}\n\n"
+                if pr_config.get("include_work_summary", True):
+                    work_summary = work_item.get("description", issue_title)
+                    pr_body += f"## Summary\n{work_summary}\n\n"
+
+                pr_body += "\n---\n*This PR was automatically created by Sugar AI*"
+            else:
+                # Non-GitHub work: use task-based PR
+                # Generate a clean title from the work item
+                pr_title = work_title.split("\n")[0][:80]  # First line, max 80 chars
+                if len(pr_title) < len(work_title):
+                    pr_title = pr_title.rstrip(".")
+
+                # Prefix with source if not CLI
+                if source != "cli":
+                    pr_title = f"{source.capitalize()}: {pr_title}"
+
+                # Create PR body
+                pr_body = f"## Task\n{work_title}\n\n"
+                if work_item.get("description"):
+                    pr_body += f"## Description\n{work_item['description']}\n\n"
+
+                # Add task metadata
+                task_type = work_item.get("type", "unknown")
+                priority = work_item.get("priority", 3)
+                pr_body += f"\n---\n*Type: {task_type} | Priority: {priority} | Source: {source}*\n"
+                pr_body += "*This PR was automatically created by Sugar AI*"
+
+            # Get base branch
+            base_branch = github_config.get("workflow", {}).get("branch", {}).get("base_branch", "main")
+
+            # Create PR
+            pr_url = await self.github_watcher.create_pull_request(
+                branch_name, pr_title, pr_body, base_branch
+            )
+
+            if pr_url:
+                logger.info(f"🔀 Created pull request: {pr_url}")
+
+                # For GitHub-sourced work, comment on issue and close it
+                if issue_number:
+                    # Comment on issue with PR link
+                    completion_comment = f"✅ Work completed. Pull request created: {pr_url}"
+                    await self.github_watcher.comment_on_issue(issue_number, completion_comment)
+
+                    # Close issue if configured
+                    if not pr_config.get("auto_merge", False) and github_config.get(
+                        "workflow", {}
+                    ).get("auto_close_issues", True):
+                        await self.github_watcher.close_issue(issue_number)
+                        logger.info(f"🔒 Closed GitHub issue #{issue_number}")
+            else:
+                logger.warning("PR creation returned no URL")
+
+        except Exception as e:
+            logger.error(f"Error creating pull request: {e}")
+
     def _generate_branch_name(self, work_item: Dict[str, Any]) -> str:
         """Generate branch name for work item"""
-        source_type = work_item.get("source_type", "sugar")
+        # For GitHub-sourced work, use the configured branch pattern
+        source = work_item.get("source", work_item.get("source_type", "unknown"))
+        if source == "github_watcher":
+            github_config = (
+                self.config.get("sugar", {}).get("discovery", {}).get("github", {})
+            )
+            branch_config = github_config.get("workflow", {}).get("branch", {})
+            name_pattern = branch_config.get("name_pattern", "sugar/issue-{issue_number}")
+
+            # Get issue number from context
+            issue_number = work_item.get("context", {}).get("github_issue", {}).get("number", "unknown")
+            return name_pattern.format(issue_number=issue_number)
+
+        # Default pattern for non-GitHub work
         work_id = work_item.get("id", "unknown")[:8]  # Short ID
-        work_type = work_item.get("work_type", "work")
+        work_type = work_item.get("type", "work")
 
         # Clean title for branch name
         title = work_item.get("title", "unknown")
         clean_title = "".join(c for c in title.lower() if c.isalnum() or c in "-_")[:30]
 
-        return f"sugar/{source_type}/{work_type}-{clean_title}-{work_id}"
+        return f"sugar/{source}/{work_type}-{clean_title}-{work_id}"
 
     async def _get_changed_files(self) -> List[str]:
         """Get list of changed files for quality gate validation"""
