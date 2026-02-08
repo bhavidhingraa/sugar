@@ -101,7 +101,7 @@ def setup_logging(log_file_path=".sugar/sugar.log", debug=False):
     # Use simple handlers with UTF-8 encoding for file, errors='replace' for console
     logging.basicConfig(
         level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        format="%(levelname)s - %(message)s - %(asctime)s - %(name)s",
         handlers=[
             logging.StreamHandler(),  # Console output
             logging.FileHandler(
