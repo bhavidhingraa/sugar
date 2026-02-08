@@ -21,7 +21,7 @@ from sugar.integrations import GitHubClient
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(levelname)s - %(message)s - %(asctime)s - %(name)s"
 )
 logger = logging.getLogger("sugar-action")
 
