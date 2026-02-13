@@ -470,7 +470,7 @@ Please provide more details if you'd like me to revisit this."""
                         thread_id = context.get("github_pr_comment", {}).get("thread_id")
 
                         # Handle GitHub interactions
-                        if pr_number and thread_id_hash:
+                        if pr_number and thread_id_hash and thread_id:
                             # Step 1: Reply to review thread with summary of changes
                             summary = execution_result.get("summary", "Changes have been made to address the review comment.")
                             reply_body = f"""I've addressed this review comment and pushed the changes.

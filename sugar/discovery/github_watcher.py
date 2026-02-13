@@ -980,9 +980,12 @@ class GitHubWatcher:
             )
 
             # Flatten the list of lists
-            for comments_list in pr_comment_lists:
-                if comments_list:
-                    all_comments.extend(comments_list)
+            for result in pr_comment_lists:
+                if isinstance(result, Exception):
+                    logger.warning(f"Failed to fetch comments for a PR: {result}")
+                    continue
+                if result:
+                    all_comments.extend(result)
 
             # Sort by creation time (oldest first)
             all_comments.sort(key=lambda c: c.created_at)
@@ -1039,7 +1042,7 @@ class GitHubWatcher:
 
         return work_items
 
-    def _format_review_comment_description(self, comment) -> str:
+    def _format_review_comment_description(self, comment: GitHubReviewComment) -> str:
         """Format review comment into work description"""
         description_parts = [
             f"**Review Comment on PR #{comment.pr_number}**",
