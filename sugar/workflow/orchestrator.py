@@ -184,7 +184,6 @@ class WorkflowOrchestrator:
             "documentation": "docs: {title}",
             "code_quality": "refactor: {title}",
             "test_coverage": "test: {title}",
-            "pr_review_comment": "fix: address review comment - {title}",
         }
 
         return templates.get(work_type, "chore: {title}")

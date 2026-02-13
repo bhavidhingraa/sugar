@@ -976,7 +976,7 @@ class GitHubWatcher:
             # Fetch all PR comments concurrently
             pr_comment_lists = await asyncio.gather(
                 *[fetch_and_process_pr(pr_data) for pr_data in prs_data],
-                return_exceptions=False,
+                return_exceptions=True,
             )
 
             # Flatten the list of lists
