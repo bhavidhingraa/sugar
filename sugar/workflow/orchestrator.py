@@ -491,9 +491,10 @@ Please review the updated commit."""
                             review_config = self._get_nested_config(
                                 "sugar", "discovery", "github", "review_comments", default={}
                             )
-                            re_review_command = review_config.get("re_review_command", "/gemini review")
-                            await self.github_watcher.add_pr_comment(pr_number, re_review_command)
-                            logger.info(f"Triggered re-review for PR #{pr_number}")
+                            re_review_command = review_config.get("re_review_command", "")
+                            if re_review_command:
+                                await self.github_watcher.add_pr_comment(pr_number, re_review_command)
+                                logger.info(f"Triggered re-review for PR #{pr_number}")
 
                             # Record the response
                             await self.github_watcher.issue_response_manager.initialize()

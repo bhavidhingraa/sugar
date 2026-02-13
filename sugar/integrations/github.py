@@ -9,7 +9,6 @@ Provides a clean interface for GitHub API operations:
 """
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import logging
 import os
@@ -892,25 +891,24 @@ class GitHubClient:
 
         return all_comments
 
-    def get_all_unresolved_comments(
+    async def get_all_unresolved_comments(
         self,
     ) -> List[GitHubReviewComment]:
         """Get all unresolved review comments across all open PRs, sorted by creation time"""
         all_comments = []
         prs = self.list_open_prs()
 
-        with ThreadPoolExecutor(max_workers=min(10, len(prs) or 1)) as executor:
-            future_to_pr = {
-                executor.submit(self.get_pr_review_comments, pr.number): pr.number
-                for pr in prs
-            }
-            for future in as_completed(future_to_pr):
-                pr_number = future_to_pr[future]
-                try:
-                    comments = future.result()
-                    all_comments.extend(comments)
-                except Exception as e:
-                    logger.warning(f"Failed to fetch review comments for PR #{pr_number}: {e}")
+        comment_lists = await asyncio.gather(
+            *[self.get_pr_review_comments_async(pr.number) for pr in prs],
+            return_exceptions=True,
+        )
+
+        for result in comment_lists:
+            if isinstance(result, Exception):
+                logger.warning(f"Failed to fetch review comments for a PR: {result}")
+                continue
+            if result:
+                all_comments.extend(result)
 
         # Sort by created_at to get oldest first
         all_comments.sort(key=lambda c: c.created_at)

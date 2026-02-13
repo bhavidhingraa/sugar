@@ -39,7 +39,10 @@ class GitOperations:
                 result = await self._run_git_command(["checkout", branch_name])
                 if result["returncode"] == 0:
                     # Pull latest changes from remote if they exist
-                    await self._run_git_command(["pull", "origin", branch_name])
+                    pull_result = await self._run_git_command(["pull", "origin", branch_name])
+                    if pull_result["returncode"] != 0:
+                        logger.warning(f"Failed to pull latest changes for {branch_name}: {pull_result['stderr']}")
+                        return False
                     return True
                 else:
                     logger.error(f"Failed to checkout existing branch {branch_name}: {result['stderr']}")
@@ -47,7 +50,10 @@ class GitOperations:
 
             # Ensure we're on the base branch and it's up to date
             await self._run_git_command(["checkout", base_branch])
-            await self._run_git_command(["pull", "origin", base_branch])
+            pull_result = await self._run_git_command(["pull", "origin", base_branch])
+            if pull_result["returncode"] != 0:
+                logger.warning(f"Failed to pull latest changes for {base_branch}: {pull_result['stderr']}")
+                return False
 
             # Create and checkout new branch
             result = await self._run_git_command(["checkout", "-b", branch_name])
@@ -81,7 +87,10 @@ class GitOperations:
                 result = await self._run_git_command(["checkout", branch_name])
                 if result["returncode"] == 0:
                     # Pull latest changes
-                    await self._run_git_command(["pull", "origin", branch_name])
+                    pull_result = await self._run_git_command(["pull", "origin", branch_name])
+                    if pull_result["returncode"] != 0:
+                        logger.warning(f"Failed to pull latest changes for {branch_name}: {pull_result['stderr']}")
+                        return False
                     logger.info(f"Checked out existing branch: {branch_name}")
                     return True
                 else:
