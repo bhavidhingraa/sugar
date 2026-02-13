@@ -8,6 +8,7 @@ Provides a clean interface for GitHub API operations:
 - Searching similar issues
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -325,6 +326,53 @@ class GitHubClient:
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse GraphQL response: {e}")
                 logger.debug(f"Raw response: {result.stdout[:500]}")
+                return None
+        return None
+
+    async def _gh_graphql_async(
+        self,
+        query: str,
+        variables: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Make a GraphQL API request via gh CLI using asyncio"""
+        # Build command: -f for query (string), -F for typed variables
+        cmd = ["gh", "api", "graphql", "-f", f"query={query}"]
+
+        # Add variables with -F flag for typed literals (Integer, Boolean, etc.)
+        if variables:
+            for key, value in variables.items():
+                if value is not None:  # Skip None values
+                    cmd.extend(["-F", f"{key}={value}"])
+
+        env = os.environ.copy()
+        if self.token:
+            env["GH_TOKEN"] = self.token
+
+        logger.debug(f"Running async GraphQL with {len(variables) if variables else 0} variables")
+
+        process = await asyncio.create_subprocess_exec(
+            *[asyncio.subprocess.PIPE] * 3,  # stdin, stdout, stderr
+            cmd,
+            env=env,
+        )
+
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            stderr_text = stderr.decode()
+            logger.error(f"Async GraphQL command failed: {stderr_text}")
+            return None
+
+        if stdout:
+            try:
+                parsed = json.loads(stdout.decode())
+                # Log any errors in the GraphQL response
+                if "errors" in parsed:
+                    logger.debug(f"GraphQL response contains errors: {parsed['errors']}")
+                return parsed
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse GraphQL response: {e}")
+                logger.debug(f"Raw response: {stdout.decode()[:500]}")
                 return None
         return None
 
@@ -656,6 +704,153 @@ class GitHubClient:
                 variables["after"] = after_cursor
 
             result = self._gh_graphql(query, variables)
+
+            if not result:
+                logger.error(f"GraphQL query returned no result for PR #{pr_number}")
+                break
+
+            # Check for errors in response
+            if "errors" in result:
+                errors = result.get("errors", [])
+                error_msgs = [e.get("message", str(e)) for e in errors]
+                logger.error(f"GraphQL errors for PR #{pr_number}: {error_msgs}")
+                break
+
+            if "data" not in result:
+                logger.error(f"GraphQL response missing 'data' for PR #{pr_number}: {result}")
+                break
+
+            # Check if data is None or repository is missing
+            data = result.get("data")
+            if not data:
+                logger.error(f"GraphQL response has null 'data' for PR #{pr_number}")
+                break
+
+            if "repository" not in data:
+                logger.error(f"GraphQL response missing 'repository' for PR #{pr_number}. Data keys: {list(data.keys())}")
+                break
+
+            if data.get("repository") is None:
+                logger.error(f"GraphQL response has null 'repository' for PR #{pr_number}")
+                break
+
+            try:
+                pr_data = data["repository"].get("pullRequest")
+                if not pr_data:
+                    logger.error(f"GraphQL response has null 'pullRequest' for PR #{pr_number}")
+                    break
+
+                threads_data = pr_data.get("reviewThreads")
+                if not threads_data:
+                    logger.error(f"GraphQL response missing 'reviewThreads' for PR #{pr_number}")
+                    break
+
+                threads = threads_data.get("nodes", [])
+                page_info = threads_data.get("pageInfo", {})
+
+                for thread in threads:
+                    if not thread.get("isResolved", False):  # Only unresolved threads
+                        comments = thread.get("comments", {}).get("nodes", [])
+                        if comments:
+                            # Get the original (first) comment in the thread
+                            original_comment = comments[0]
+                            author_login = original_comment["author"]["login"]
+                            # Determine if bot by checking login suffix
+                            author_type = "Bot" if author_login.endswith("[bot]") else "User"
+
+                            comment = GitHubReviewComment(
+                                id=original_comment["id"],
+                                thread_id=thread["id"],
+                                pr_number=pr_number,
+                                body=original_comment.get("body", ""),
+                                path=original_comment.get("path", ""),
+                                line=original_comment.get("line", 0),
+                                commit_id=original_comment.get("originalCommit", {}).get("oid", ""),
+                                user=GitHubUser(
+                                    login=author_login,
+                                    type=author_type,
+                                ),
+                                created_at=original_comment["createdAt"],
+                                state="active",
+                                diff_hunk=original_comment.get("diffHunk", ""),
+                                start_line=original_comment.get("startLine"),
+                            )
+                            all_comments.append(comment)
+
+                has_next_page = page_info.get("hasNextPage", False)
+                if has_next_page:
+                    after_cursor = page_info.get("endCursor")
+
+            except (KeyError, IndexError) as e:
+                logger.error(f"Error parsing GraphQL response for PR #{pr_number}: {e}")
+                break
+
+        return all_comments
+
+    async def get_pr_review_comments_async(
+        self,
+        pr_number: int,
+    ) -> List[GitHubReviewComment]:
+        """Get all unresolved review comments for a PR using GraphQL (async)"""
+        if not self.repo:
+            logger.warning("No repo configured for GraphQL queries")
+            return []
+
+        # Validate repo format
+        if not self.repo or "/" not in self.repo:
+            logger.error(f"Invalid repo format: '{self.repo}'. Expected 'owner/repo'.")
+            return []
+
+        owner, repo_name = self.repo.split("/", 1)
+        logger.debug(f"Querying PR #{pr_number} for repo: {self.repo} (owner={owner}, repo={repo_name})")
+
+        query = """
+        query($owner: String!, $repo: String!, $pr_number: Int!, $after: String) {
+            repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr_number) {
+                    reviewThreads(first: 50, after: $after) {
+                        pageInfo {
+                            hasNextPage
+                            endCursor
+                        }
+                        nodes {
+                            id
+                            isResolved
+                            comments(first: 100) {
+                                nodes {
+                                    id
+                                    body
+                                    author { login }
+                                    createdAt
+                                    originalCommit { oid }
+                                    path
+                                    line
+                                    startLine
+                                    diffHunk
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """
+
+        all_comments = []
+        has_next_page = True
+        after_cursor = None
+
+        while has_next_page:
+            # Only include 'after' if we have a cursor
+            variables = {
+                "owner": owner,
+                "repo": repo_name,
+                "pr_number": pr_number,
+            }
+            if after_cursor:
+                variables["after"] = after_cursor
+
+            result = await self._gh_graphql_async(query, variables)
 
             if not result:
                 logger.error(f"GraphQL query returned no result for PR #{pr_number}")

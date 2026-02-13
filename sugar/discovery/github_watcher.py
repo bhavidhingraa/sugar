@@ -944,12 +944,17 @@ class GitHubWatcher:
                 "number,title,headRefName,baseRefName,createdAt,updatedAt",
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode != 0:
-                logger.error(f"Failed to list PRs: {result.stderr}")
+            process = await asyncio.create_subprocess_exec(
+                *[asyncio.subprocess.PIPE] * 3,  # stdin, stdout, stderr
+                *cmd,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+
+            if process.returncode != 0:
+                logger.error(f"Failed to list PRs: {stderr.decode()}")
                 return work_items
 
-            prs_data = json.loads(result.stdout)
+            prs_data = json.loads(stdout.decode())
 
             gh_client = GitHubClient(repo=self.repo_name)
             all_comments = []
@@ -959,7 +964,7 @@ class GitHubWatcher:
                 pr_number = pr_data.get("number")
                 pr_branch = pr_data.get("headRefName", "")
                 pr_base_branch = pr_data.get("baseRefName", "main")
-                comments = gh_client.get_pr_review_comments(pr_number)
+                comments = await gh_client.get_pr_review_comments_async(pr_number)
                 # Set branch info on each comment (optional fields in dataclass)
                 for comment in comments:
                     comment.branch = pr_branch
