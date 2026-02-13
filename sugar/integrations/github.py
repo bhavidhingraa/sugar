@@ -715,9 +715,8 @@ class GitHubClient:
                 result, pr_number
             )
 
-            if has_next_page:
-                all_comments.extend(comments)
-            else:
+            all_comments.extend(comments)
+            if not has_next_page:
                 break
 
         return all_comments
@@ -885,9 +884,8 @@ class GitHubClient:
                 result, pr_number
             )
 
-            if has_next_page:
-                all_comments.extend(comments)
-            else:
+            all_comments.extend(comments)
+            if not has_next_page:
                 break
 
         return all_comments

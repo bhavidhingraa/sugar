@@ -995,7 +995,7 @@ class GitHubWatcher:
 
                 # Use thread_id as the unique identifier for deduplication
                 # Hash the thread_id to get a numeric value for the database
-                thread_id_hash = int(hashlib.md5(comment.thread_id.encode()).hexdigest()[:16], 16)
+                thread_id_hash = int(hashlib.sha256(comment.thread_id.encode()).hexdigest()[:16], 16)
 
                 has_responded = await self.issue_response_manager.has_responded(
                     self.repo_name, thread_id_hash, "pr_review_comment"
