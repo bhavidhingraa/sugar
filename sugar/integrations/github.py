@@ -709,83 +709,106 @@ class GitHubClient:
                 logger.error(f"GraphQL query returned no result for PR #{pr_number}")
                 break
 
-            # Check for errors in response
-            if "errors" in result:
-                errors = result.get("errors", [])
-                error_msgs = [e.get("message", str(e)) for e in errors]
-                logger.error(f"GraphQL errors for PR #{pr_number}: {error_msgs}")
-                break
+            comments, has_next_page, after_cursor = self._parse_pr_review_comments_from_response(
+                result, pr_number
+            )
 
-            if "data" not in result:
-                logger.error(f"GraphQL response missing 'data' for PR #{pr_number}: {result}")
-                break
-
-            # Check if data is None or repository is missing
-            data = result.get("data")
-            if not data:
-                logger.error(f"GraphQL response has null 'data' for PR #{pr_number}")
-                break
-
-            if "repository" not in data:
-                logger.error(f"GraphQL response missing 'repository' for PR #{pr_number}. Data keys: {list(data.keys())}")
-                break
-
-            if data.get("repository") is None:
-                logger.error(f"GraphQL response has null 'repository' for PR #{pr_number}")
-                break
-
-            try:
-                pr_data = data["repository"].get("pullRequest")
-                if not pr_data:
-                    logger.error(f"GraphQL response has null 'pullRequest' for PR #{pr_number}")
-                    break
-
-                threads_data = pr_data.get("reviewThreads")
-                if not threads_data:
-                    logger.error(f"GraphQL response missing 'reviewThreads' for PR #{pr_number}")
-                    break
-
-                threads = threads_data.get("nodes", [])
-                page_info = threads_data.get("pageInfo", {})
-
-                for thread in threads:
-                    if not thread.get("isResolved", False):  # Only unresolved threads
-                        comments = thread.get("comments", {}).get("nodes", [])
-                        if comments:
-                            # Get the original (first) comment in the thread
-                            original_comment = comments[0]
-                            author_login = original_comment["author"]["login"]
-                            # Determine if bot by checking login suffix
-                            author_type = "Bot" if author_login.endswith("[bot]") else "User"
-
-                            comment = GitHubReviewComment(
-                                id=original_comment["id"],
-                                thread_id=thread["id"],
-                                pr_number=pr_number,
-                                body=original_comment.get("body", ""),
-                                path=original_comment.get("path", ""),
-                                line=original_comment.get("line", 0),
-                                commit_id=original_comment.get("originalCommit", {}).get("oid", ""),
-                                user=GitHubUser(
-                                    login=author_login,
-                                    type=author_type,
-                                ),
-                                created_at=original_comment["createdAt"],
-                                state="active",
-                                diff_hunk=original_comment.get("diffHunk", ""),
-                                start_line=original_comment.get("startLine"),
-                            )
-                            all_comments.append(comment)
-
-                has_next_page = page_info.get("hasNextPage", False)
-                if has_next_page:
-                    after_cursor = page_info.get("endCursor")
-
-            except (KeyError, IndexError) as e:
-                logger.error(f"Error parsing GraphQL response for PR #{pr_number}: {e}")
+            if has_next_page:
+                all_comments.extend(comments)
+            else:
                 break
 
         return all_comments
+
+    def _parse_pr_review_comments_from_response(
+        self,
+        result: Dict[str, Any],
+        pr_number: int,
+    ) -> tuple[List[GitHubReviewComment], bool, Optional[str]]:
+        """Parse GraphQL response to extract review comments.
+
+        Returns:
+            Tuple of (all_comments, has_next_page, end_cursor)
+
+        Helper method used by both sync and async versions.
+        """
+        all_comments = []
+
+        # Check for errors in response
+        if "errors" in result:
+            errors = result.get("errors", [])
+            error_msgs = [e.get("message", str(e)) for e in errors]
+            logger.error(f"GraphQL errors for PR #{pr_number}: {error_msgs}")
+            return all_comments, False, None
+
+        if "data" not in result:
+            logger.error(f"GraphQL response missing 'data' for PR #{pr_number}: {result}")
+            return all_comments, False, None
+
+        # Check if data is None or repository is missing
+        data = result.get("data")
+        if not data:
+            logger.error(f"GraphQL response has null 'data' for PR #{pr_number}")
+            return all_comments, False, None
+
+        if "repository" not in data:
+            logger.error(f"GraphQL response missing 'repository' for PR #{pr_number}. Data keys: {list(data.keys())}")
+            return all_comments, False, None
+
+        if data.get("repository") is None:
+            logger.error(f"GraphQL response has null 'repository' for PR #{pr_number}")
+            return all_comments, False, None
+
+        try:
+            pr_data = data["repository"].get("pullRequest")
+            if not pr_data:
+                logger.error(f"GraphQL response has null 'pullRequest' for PR #{pr_number}")
+                return all_comments, False, None
+
+            threads_data = pr_data.get("reviewThreads")
+            if not threads_data:
+                logger.error(f"GraphQL response missing 'reviewThreads' for PR #{pr_number}")
+                return all_comments, False, None
+
+            threads = threads_data.get("nodes", [])
+            page_info = threads_data.get("pageInfo", {})
+
+            for thread in threads:
+                if not thread.get("isResolved", False):  # Only unresolved threads
+                    comments = thread.get("comments", {}).get("nodes", [])
+                    if comments:
+                        # Get the original (first) comment in the thread
+                        original_comment = comments[0]
+                        author_login = original_comment["author"]["login"]
+                        # Determine if bot by checking login suffix
+                        author_type = "Bot" if author_login.endswith("[bot]") else "User"
+
+                        comment = GitHubReviewComment(
+                            id=original_comment["id"],
+                            thread_id=thread["id"],
+                            pr_number=pr_number,
+                            body=original_comment.get("body", ""),
+                            path=original_comment.get("path", ""),
+                            line=original_comment.get("line", 0),
+                            commit_id=original_comment.get("originalCommit", {}).get("oid", ""),
+                            user=GitHubUser(
+                                login=author_login,
+                                type=author_type,
+                            ),
+                            created_at=original_comment["createdAt"],
+                            state="active",
+                            diff_hunk=original_comment.get("diffHunk", ""),
+                            start_line=original_comment.get("startLine"),
+                        )
+                        all_comments.append(comment)
+
+            has_next_page = page_info.get("hasNextPage", False)
+            end_cursor = page_info.get("endCursor")
+            return all_comments, has_next_page, end_cursor
+
+        except (KeyError, IndexError) as e:
+            logger.error(f"Error parsing GraphQL response for PR #{pr_number}: {e}")
+            return all_comments, False, None
 
     async def get_pr_review_comments_async(
         self,
@@ -856,80 +879,14 @@ class GitHubClient:
                 logger.error(f"GraphQL query returned no result for PR #{pr_number}")
                 break
 
-            # Check for errors in response
-            if "errors" in result:
-                errors = result.get("errors", [])
-                error_msgs = [e.get("message", str(e)) for e in errors]
-                logger.error(f"GraphQL errors for PR #{pr_number}: {error_msgs}")
-                break
+            comments, has_next_page, after_cursor = self._parse_pr_review_comments_from_response(
+                result, pr_number
+            )
 
-            if "data" not in result:
-                logger.error(f"GraphQL response missing 'data' for PR #{pr_number}: {result}")
-                break
-
-            # Check if data is None or repository is missing
-            data = result.get("data")
-            if not data:
-                logger.error(f"GraphQL response has null 'data' for PR #{pr_number}")
-                break
-
-            if "repository" not in data:
-                logger.error(f"GraphQL response missing 'repository' for PR #{pr_number}. Data keys: {list(data.keys())}")
-                break
-
-            if data.get("repository") is None:
-                logger.error(f"GraphQL response has null 'repository' for PR #{pr_number}")
-                break
-
-            try:
-                pr_data = data["repository"].get("pullRequest")
-                if not pr_data:
-                    logger.error(f"GraphQL response has null 'pullRequest' for PR #{pr_number}")
-                    break
-
-                threads_data = pr_data.get("reviewThreads")
-                if not threads_data:
-                    logger.error(f"GraphQL response missing 'reviewThreads' for PR #{pr_number}")
-                    break
-
-                threads = threads_data.get("nodes", [])
-                page_info = threads_data.get("pageInfo", {})
-
-                for thread in threads:
-                    if not thread.get("isResolved", False):  # Only unresolved threads
-                        comments = thread.get("comments", {}).get("nodes", [])
-                        if comments:
-                            # Get the original (first) comment in the thread
-                            original_comment = comments[0]
-                            author_login = original_comment["author"]["login"]
-                            # Determine if bot by checking login suffix
-                            author_type = "Bot" if author_login.endswith("[bot]") else "User"
-
-                            comment = GitHubReviewComment(
-                                id=original_comment["id"],
-                                thread_id=thread["id"],
-                                pr_number=pr_number,
-                                body=original_comment.get("body", ""),
-                                path=original_comment.get("path", ""),
-                                line=original_comment.get("line", 0),
-                                commit_id=original_comment.get("originalCommit", {}).get("oid", ""),
-                                user=GitHubUser(
-                                    login=author_login,
-                                    type=author_type,
-                                ),
-                                created_at=original_comment["createdAt"],
-                                state="active",
-                                diff_hunk=original_comment.get("diffHunk", ""),
-                                start_line=original_comment.get("startLine"),
-                            )
-                            all_comments.append(comment)
-
-                has_next_page = page_info.get("hasNextPage", False)
-                if has_next_page:
-                    after_cursor = page_info.get("endCursor")
-
-            except (KeyError, IndexError) as e:
-                logger.error(f"Error parsing GraphQL response for PR #{pr_number}: {e}")
+            if has_next_page:
+                all_comments.extend(comments)
+            else:
+                all_comments.extend(comments)
                 break
 
         return all_comments
