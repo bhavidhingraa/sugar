@@ -351,8 +351,10 @@ class GitHubClient:
         logger.debug(f"Running async GraphQL with {len(variables) if variables else 0} variables")
 
         process = await asyncio.create_subprocess_exec(
-            *[asyncio.subprocess.PIPE] * 3,  # stdin, stdout, stderr
-            cmd,
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             env=env,
         )
 
@@ -886,7 +888,6 @@ class GitHubClient:
             if has_next_page:
                 all_comments.extend(comments)
             else:
-                all_comments.extend(comments)
                 break
 
         return all_comments

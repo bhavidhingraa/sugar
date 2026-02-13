@@ -945,8 +945,10 @@ class GitHubWatcher:
             ]
 
             process = await asyncio.create_subprocess_exec(
-                *[asyncio.subprocess.PIPE] * 3,  # stdin, stdout, stderr
                 *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
 
