@@ -183,8 +183,8 @@ class WorkflowOrchestrator:
         if workflow["commit_style"] == "conventional":
             # For PR review comments, include file_path and line from context
             if work_item.get("type") == "pr_review_comment":
-                file_path = context.get("file_path", "unknown")
-                line = context.get("line", 0)
+                file_path = context.get("github_pr_comment", {}).get("path", "unknown")
+                line = context.get("github_pr_comment", {}).get("line", 0)
                 message = template.format(title=title, file_path=file_path, line=line)
             else:
                 # Use the template as-is (already conventional format)

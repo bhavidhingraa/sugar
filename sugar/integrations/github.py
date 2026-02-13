@@ -701,7 +701,7 @@ class GitHubClient:
                 page_info = threads_data.get("pageInfo", {})
 
                 for thread in threads:
-                    if not thread.get("isResolved", True):  # Only unresolved threads
+                    if not thread.get("isResolved", False):  # Only unresolved threads
                         comments = thread.get("comments", {}).get("nodes", [])
                         if comments:
                             # Get the original (first) comment in the thread

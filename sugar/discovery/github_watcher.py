@@ -960,7 +960,7 @@ class GitHubWatcher:
                 pr_branch = pr_data.get("headRefName", "")
                 pr_base_branch = pr_data.get("baseRefName", "main")
                 comments = gh_client.get_pr_review_comments(pr_number)
-                # Set branch info on each comment via from_dict
+                # Set branch info on each comment (optional fields in dataclass)
                 for comment in comments:
                     comment.branch = pr_branch
                     comment.base_branch = pr_base_branch
@@ -1046,8 +1046,6 @@ class GitHubWatcher:
             return False
 
         try:
-            from ..integrations.github import GitHubClient
-
             gh_client = GitHubClient(repo=self.repo_name)
             return gh_client.reply_to_review_thread(pr_number, thread_id, body)
 
@@ -1064,8 +1062,6 @@ class GitHubWatcher:
             return False
 
         try:
-            from ..integrations.github import GitHubClient
-
             gh_client = GitHubClient(repo=self.repo_name)
             return gh_client.resolve_conversation_graphql(thread_id)
 
@@ -1083,8 +1079,6 @@ class GitHubWatcher:
             return False
 
         try:
-            from ..integrations.github import GitHubClient
-
             gh_client = GitHubClient(repo=self.repo_name)
             return gh_client.add_pr_comment(pr_number, body)
 
