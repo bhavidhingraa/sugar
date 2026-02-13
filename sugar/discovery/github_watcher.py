@@ -4,6 +4,7 @@ Supports both GitHub CLI (gh) and PyGithub authentication
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -13,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import IssueResponderConfig
 from ..storage import IssueResponseManager
+from ..integrations.github import GitHubClient, GitHubReviewComment
 
 # Optional PyGithub import
 try:
@@ -156,6 +158,11 @@ class GitHubWatcher:
                 # Use PyGithub
                 issues_work = await self._discover_issues_pygithub()
                 work_items.extend(issues_work)
+
+            # Discover PR review comments if enabled
+            if self.config.get("review_comments", {}).get("enabled", True):
+                review_comments_work = await self._discover_pr_review_comments()
+                work_items.extend(review_comments_work)
 
         except Exception as e:
             logger.error(f"Error discovering GitHub work: {e}")
@@ -909,3 +916,193 @@ class GitHubWatcher:
         except Exception as e:
             logger.error(f"Error using PyGithub to create PR: {e}")
             return None
+
+    async def _discover_pr_review_comments(self) -> List[Dict[str, Any]]:
+        """Discover unresolved PR review comments and create work items"""
+        work_items = []
+
+        if not self.enabled:
+            return work_items
+
+        try:
+            await self.issue_response_manager.initialize()
+
+            gh_command = self.config.get("gh_cli", {}).get("command", "gh")
+
+            # Get open PRs
+            cmd = [
+                gh_command,
+                "pr",
+                "list",
+                "--repo",
+                self.repo_name,
+                "--state",
+                "open",
+                "--limit",
+                str(self.config.get("review_comments", {}).get("pr_limit", 50)),
+                "--json",
+                "number,title,headRefName,baseRefName,createdAt,updatedAt",
+            ]
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+
+            if process.returncode != 0:
+                logger.error(f"Failed to list PRs: {stderr.decode()}")
+                return work_items
+
+            prs_data = json.loads(stdout.decode())
+
+            gh_client = GitHubClient(repo=self.repo_name)
+            all_comments = []
+
+            # Get review comments for each PR concurrently using asyncio.gather
+            async def fetch_and_process_pr(pr_data):
+                pr_number = pr_data.get("number")
+                pr_branch = pr_data.get("headRefName", "")
+                pr_base_branch = pr_data.get("baseRefName", "main")
+                comments = await gh_client.get_pr_review_comments_async(pr_number)
+                # Set branch info on each comment (optional fields in dataclass)
+                for comment in comments:
+                    comment.branch = pr_branch
+                    comment.base_branch = pr_base_branch
+                return comments
+
+            # Fetch all PR comments concurrently
+            pr_comment_lists = await asyncio.gather(
+                *[fetch_and_process_pr(pr_data) for pr_data in prs_data],
+                return_exceptions=True,
+            )
+
+            # Flatten the list of lists
+            for result in pr_comment_lists:
+                if isinstance(result, Exception):
+                    logger.warning(f"Failed to fetch comments for a PR: {result}")
+                    continue
+                if result:
+                    all_comments.extend(result)
+
+            # Sort by creation time (oldest first)
+            all_comments.sort(key=lambda c: c.created_at)
+
+            # Create work items for each unresolved comment
+            for comment in all_comments:
+                # Skip comments from bots (including our own)
+                if comment.user.type == "Bot" or comment.user.login.endswith("[bot]"):
+                    continue
+
+                # Use thread_id as the unique identifier for deduplication
+                # Hash the thread_id to get a numeric value for the database
+                thread_id_hash = int(hashlib.sha256(comment.thread_id.encode()).hexdigest()[:16], 16)
+
+                has_responded = await self.issue_response_manager.has_responded(
+                    self.repo_name, thread_id_hash, "pr_review_comment"
+                )
+
+                if not has_responded:
+                    work_item = {
+                        "type": "pr_review_comment",
+                        "title": f"Address PR #{comment.pr_number} review comment",
+                        "description": self._format_review_comment_description(comment),
+                        "priority": 4,  # High priority for review comments
+                        "source": "github_watcher",
+                        "source_file": f"github://pr/{comment.pr_number}/comment/{thread_id_hash}",
+                        "context": {
+                            "github_pr_comment": {
+                                "thread_id": comment.thread_id,
+                                "comment_id": str(comment.id),
+                                "pr_number": comment.pr_number,
+                                "body": comment.body,
+                                "path": comment.path,
+                                "line": comment.line,
+                                "created_at": comment.created_at,
+                                "user": {"login": comment.user.login},
+                            },
+                            "repo": self.repo_name,
+                            "branch": getattr(comment, "branch", ""),
+                            "base_branch": getattr(comment, "base_branch", "main"),
+                            "thread_id_hash": thread_id_hash,
+                        },
+                    }
+                    work_items.append(work_item)
+                    logger.info(
+                        f"Created pr_review_comment work item for PR #{comment.pr_number} "
+                        f"(thread: {thread_id_hash})"
+                    )
+
+            logger.debug(f"Found {len(all_comments)} unresolved review comments, created {len(work_items)} work items")
+
+        except Exception as e:
+            logger.error(f"Error discovering PR review comments: {e}")
+
+        return work_items
+
+    def _format_review_comment_description(self, comment: GitHubReviewComment) -> str:
+        """Format review comment into work description"""
+        description_parts = [
+            f"**Review Comment on PR #{comment.pr_number}**",
+            f"File: {comment.path}",
+            f"Line: {comment.line}",
+            "",
+            "**Comment:**",
+            comment.body,
+            "",
+            "**Task:** Address this review comment and push changes to the PR branch.",
+        ]
+        return "\n".join(description_parts)
+
+    async def reply_to_review_thread(
+        self,
+        pr_number: int,
+        thread_id: str,
+        body: str,
+    ) -> bool:
+        """Reply to a review comment thread"""
+        if not self.enabled:
+            return False
+
+        try:
+            gh_client = GitHubClient(repo=self.repo_name)
+            return gh_client.reply_to_review_thread(pr_number, thread_id, body)
+
+        except Exception as e:
+            logger.error(f"Error replying to review thread: {e}")
+            return False
+
+    async def resolve_conversation_graphql(
+        self,
+        thread_id: str,
+    ) -> bool:
+        """Resolve a review conversation using GraphQL"""
+        if not self.enabled:
+            return False
+
+        try:
+            gh_client = GitHubClient(repo=self.repo_name)
+            return gh_client.resolve_conversation_graphql(thread_id)
+
+        except Exception as e:
+            logger.error(f"Error resolving conversation: {e}")
+            return False
+
+    async def add_pr_comment(
+        self,
+        pr_number: int,
+        body: str,
+    ) -> bool:
+        """Add a comment to a PR"""
+        if not self.enabled:
+            return False
+
+        try:
+            gh_client = GitHubClient(repo=self.repo_name)
+            return gh_client.add_pr_comment(pr_number, body)
+
+        except Exception as e:
+            logger.error(f"Error adding PR comment: {e}")
+            return False

@@ -39,7 +39,10 @@ class GitOperations:
                 result = await self._run_git_command(["checkout", branch_name])
                 if result["returncode"] == 0:
                     # Pull latest changes from remote if they exist
-                    await self._run_git_command(["pull", "origin", branch_name])
+                    pull_result = await self._run_git_command(["pull", "origin", branch_name])
+                    if pull_result["returncode"] != 0:
+                        logger.warning(f"Failed to pull latest changes for {branch_name}: {pull_result['stderr']}")
+                        return False
                     return True
                 else:
                     logger.error(f"Failed to checkout existing branch {branch_name}: {result['stderr']}")
@@ -47,7 +50,10 @@ class GitOperations:
 
             # Ensure we're on the base branch and it's up to date
             await self._run_git_command(["checkout", base_branch])
-            await self._run_git_command(["pull", "origin", base_branch])
+            pull_result = await self._run_git_command(["pull", "origin", base_branch])
+            if pull_result["returncode"] != 0:
+                logger.warning(f"Failed to pull latest changes for {base_branch}: {pull_result['stderr']}")
+                return False
 
             # Create and checkout new branch
             result = await self._run_git_command(["checkout", "-b", branch_name])
@@ -63,6 +69,45 @@ class GitOperations:
 
         except Exception as e:
             logger.error(f"Error creating branch {branch_name}: {e}")
+            return False
+
+    async def checkout_existing_branch(self, branch_name: str) -> bool:
+        """Checkout an existing branch (for PR branches) without creating a new one"""
+        try:
+            # Fetch all remotes first
+            await self._run_git_command(["fetch", "origin"])
+
+            # Check if branch exists locally using rev-parse
+            local_result = await self._run_git_command(
+                ["rev-parse", "--verify", "--quiet", f"refs/heads/{branch_name}"]
+            )
+
+            if local_result["returncode"] == 0:
+                # Checkout local branch
+                result = await self._run_git_command(["checkout", branch_name])
+                if result["returncode"] == 0:
+                    # Pull latest changes
+                    pull_result = await self._run_git_command(["pull", "origin", branch_name])
+                    if pull_result["returncode"] != 0:
+                        logger.warning(f"Failed to pull latest changes for {branch_name}: {pull_result['stderr']}")
+                        return False
+                    logger.info(f"Checked out existing branch: {branch_name}")
+                    return True
+                else:
+                    logger.error(f"Failed to checkout local branch {branch_name}: {result['stderr']}")
+                    return False
+            else:
+                # Checkout remote branch
+                result = await self._run_git_command(["checkout", "-b", branch_name, f"origin/{branch_name}"])
+                if result["returncode"] == 0:
+                    logger.info(f"Checked out remote branch: {branch_name}")
+                    return True
+                else:
+                    logger.error(f"Failed to checkout remote branch {branch_name}: {result['stderr']}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error checking out branch {branch_name}: {e}")
             return False
 
     async def commit_changes(self, commit_message: str, add_all: bool = True) -> bool:
