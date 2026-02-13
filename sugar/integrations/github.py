@@ -91,6 +91,8 @@ class GitHubReviewComment:
     diff_hunk: str = ""
     start_line: Optional[int] = None
     original_commit_id: Optional[str] = None
+    branch: Optional[str] = None  # PR head branch name
+    base_branch: Optional[str] = None  # PR base branch name
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GitHubReviewComment":
@@ -108,6 +110,8 @@ class GitHubReviewComment:
             diff_hunk=data.get("diff_hunk", ""),
             start_line=data.get("start_line"),
             original_commit_id=data.get("original_commit_id"),
+            branch=data.get("branch"),
+            base_branch=data.get("base_branch"),
         )
 
 
@@ -597,7 +601,12 @@ class GitHubClient:
             logger.warning("No repo configured for GraphQL queries")
             return []
 
-        owner, repo_name = self.repo.split("/") if "/" in self.repo else ("", "")
+        # Validate repo format
+        if not self.repo or "/" not in self.repo:
+            logger.error(f"Invalid repo format: '{self.repo}'. Expected 'owner/repo'.")
+            return []
+
+        owner, repo_name = self.repo.split("/", 1)
         logger.debug(f"Querying PR #{pr_number} for repo: {self.repo} (owner={owner}, repo={repo_name})")
 
         query = """

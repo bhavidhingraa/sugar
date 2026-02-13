@@ -300,11 +300,11 @@ class WorkflowOrchestrator:
                 # For PR review comments, still reply to the thread explaining why
                 if workflow.get("resolve_conversation") and self.github_watcher:
                     context = work_item.get("context", {})
-                    pr_number = context.get("pr_number")
-                    thread_id = context.get("thread_id")
-                    thread_id_full = context.get("github_pr_comment", {}).get("thread_id")
+                    pr_number = context.get("github_pr_comment", {}).get("pr_number")
+                    thread_id_hash = context.get("thread_id_hash")
+                    thread_id = context.get("github_pr_comment", {}).get("thread_id")
 
-                    if pr_number and thread_id and thread_id_full:
+                    if pr_number and thread_id_hash and thread_id:
                         # Get the summary or reason from execution result
                         summary = execution_result.get("summary", "")
                         result = execution_result.get("result", "")
@@ -328,19 +328,19 @@ class WorkflowOrchestrator:
 Please provide more details if you'd like me to revisit this."""
 
                         await self.github_watcher.reply_to_review_thread(
-                            pr_number, thread_id_full, reply_body
+                            pr_number, thread_id, reply_body
                         )
                         logger.info(f"Replied to review thread for PR #{pr_number} (no changes made)")
 
                         # Resolve the conversation even though no changes were made
-                        await self.github_watcher.resolve_conversation_graphql(thread_id_full)
+                        await self.github_watcher.resolve_conversation_graphql(thread_id)
                         logger.info(f"Resolved review conversation for PR #{pr_number} (no changes)")
 
                         # Record the response even though no changes were made
                         await self.github_watcher.issue_response_manager.initialize()
                         await self.github_watcher.issue_response_manager.record_response(
                             repo=context.get("repo"),
-                            issue_number=thread_id,
+                            issue_number=thread_id_hash,
                             response_type="pr_review_comment",
                             confidence=1.0,
                             response_content=reply_body,
@@ -446,12 +446,12 @@ Please provide more details if you'd like me to revisit this."""
 
                         # Get context from work item
                         context = work_item.get("context", {})
-                        pr_number = context.get("pr_number")
-                        thread_id = context.get("thread_id")
-                        thread_id_full = context.get("github_pr_comment", {}).get("thread_id")
+                        pr_number = context.get("github_pr_comment", {}).get("pr_number")
+                        thread_id_hash = context.get("thread_id_hash")
+                        thread_id = context.get("github_pr_comment", {}).get("thread_id")
 
                         # Handle GitHub interactions
-                        if pr_number and thread_id:
+                        if pr_number and thread_id_hash:
                             # Step 1: Reply to review thread with summary of changes
                             summary = execution_result.get("summary", "Changes have been made to address the review comment.")
                             reply_body = f"""I've addressed this review comment and pushed the changes.
@@ -461,11 +461,11 @@ Please provide more details if you'd like me to revisit this."""
 
 Please review the updated commit."""
                             await self.github_watcher.reply_to_review_thread(
-                                pr_number, thread_id_full, reply_body
+                                pr_number, thread_id, reply_body
                             )
 
                             # Step 2: Resolve the conversation
-                            await self.github_watcher.resolve_conversation_graphql(thread_id_full)
+                            await self.github_watcher.resolve_conversation_graphql(thread_id)
                             logger.info(f"Resolved review conversation for PR #{pr_number}")
 
                             # Step 3: Trigger re-review with configured command
@@ -483,7 +483,7 @@ Please review the updated commit."""
                             await self.github_watcher.issue_response_manager.initialize()
                             await self.github_watcher.issue_response_manager.record_response(
                                 repo=context.get("repo"),
-                                issue_number=thread_id,  # Using thread_id as unique identifier
+                                issue_number=thread_id_hash,  # Using thread_id_hash as unique identifier
                                 response_type="pr_review_comment",
                                 confidence=1.0,
                                 response_content=reply_body,

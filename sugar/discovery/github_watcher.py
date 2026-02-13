@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import IssueResponderConfig
 from ..storage import IssueResponseManager
+from ..integrations.github import GitHubClient, GitHubReviewComment
 
 # Optional PyGithub import
 try:
@@ -950,9 +951,6 @@ class GitHubWatcher:
 
             prs_data = json.loads(result.stdout)
 
-            # Import GitHubClient to use its GraphQL methods
-            from ..integrations.github import GitHubClient
-
             gh_client = GitHubClient(repo=self.repo_name)
             all_comments = []
 
@@ -962,7 +960,7 @@ class GitHubWatcher:
                 pr_branch = pr_data.get("headRefName", "")
                 pr_base_branch = pr_data.get("baseRefName", "main")
                 comments = gh_client.get_pr_review_comments(pr_number)
-                # Store branch info with each comment
+                # Set branch info on each comment via from_dict
                 for comment in comments:
                     comment.branch = pr_branch
                     comment.base_branch = pr_base_branch
@@ -1005,13 +1003,9 @@ class GitHubWatcher:
                                 "user": {"login": comment.user.login},
                             },
                             "repo": self.repo_name,
-                            "pr_number": comment.pr_number,
                             "branch": getattr(comment, "branch", ""),
                             "base_branch": getattr(comment, "base_branch", "main"),
-                            "thread_id": thread_id_hash,
-                            "comment_body": comment.body,
-                            "file_path": comment.path,
-                            "line": comment.line,
+                            "thread_id_hash": thread_id_hash,
                         },
                     }
                     work_items.append(work_item)

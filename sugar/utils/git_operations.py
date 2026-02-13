@@ -71,10 +71,12 @@ class GitOperations:
             # Fetch all remotes first
             await self._run_git_command(["fetch", "origin"])
 
-            # Check if branch exists locally
-            local_result = await self._run_git_command(["branch", "--list", branch_name])
+            # Check if branch exists locally using rev-parse
+            local_result = await self._run_git_command(
+                ["rev-parse", "--verify", "--quiet", f"refs/heads/{branch_name}"]
+            )
 
-            if branch_name in local_result["stdout"]:
+            if local_result["returncode"] == 0:
                 # Checkout local branch
                 result = await self._run_git_command(["checkout", branch_name])
                 if result["returncode"] == 0:
