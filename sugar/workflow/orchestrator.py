@@ -30,6 +30,26 @@ class WorkflowOrchestrator:
         self.github_watcher = github_watcher
         self.workflow_config = self._load_workflow_config()
 
+    def _get_nested_config(self, *keys, default=None):
+        """Helper to safely access nested config values.
+
+        Args:
+            *keys: Sequence of keys to traverse the config dict
+            default: Default value if any key in path is missing
+
+        Example:
+            self._get_nested_config("sugar", "discovery", "github", "review_comments")
+        """
+        value = self.config
+        for key in keys:
+            if isinstance(value, dict):
+                value = value.get(key)
+            else:
+                return default
+            if value is None:
+                return default
+        return value if value is not None else default
+
         # Initialize quality gates coordinator if enabled
         self.quality_gates = None
         if config.get("quality_gates", {}).get("enabled", False):
@@ -469,11 +489,8 @@ Please review the updated commit."""
                             logger.info(f"Resolved review conversation for PR #{pr_number}")
 
                             # Step 3: Trigger re-review with configured command
-                            review_config = (
-                                self.config.get("sugar", {})
-                                .get("discovery", {})
-                                .get("github", {})
-                                .get("review_comments", {})
+                            review_config = self._get_nested_config(
+                                "sugar", "discovery", "github", "review_comments", default={}
                             )
                             re_review_command = review_config.get("re_review_command", "/gemini review")
                             await self.github_watcher.add_pr_comment(pr_number, re_review_command)

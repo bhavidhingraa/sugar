@@ -939,7 +939,7 @@ class GitHubWatcher:
                 "--state",
                 "open",
                 "--limit",
-                "50",
+                str(self.config.get("review_comments", {}).get("pr_limit", 50)),
                 "--json",
                 "number,title,headRefName,baseRefName,createdAt,updatedAt",
             ]
@@ -959,8 +959,8 @@ class GitHubWatcher:
             gh_client = GitHubClient(repo=self.repo_name)
             all_comments = []
 
-            # Get review comments for each PR, storing branch info with each comment
-            for pr_data in prs_data:
+            # Get review comments for each PR concurrently using asyncio.gather
+            async def fetch_and_process_pr(pr_data):
                 pr_number = pr_data.get("number")
                 pr_branch = pr_data.get("headRefName", "")
                 pr_base_branch = pr_data.get("baseRefName", "main")
@@ -969,7 +969,18 @@ class GitHubWatcher:
                 for comment in comments:
                     comment.branch = pr_branch
                     comment.base_branch = pr_base_branch
-                all_comments.extend(comments)
+                return comments
+
+            # Fetch all PR comments concurrently
+            pr_comment_lists = await asyncio.gather(
+                *[fetch_and_process_pr(pr_data) for pr_data in prs_data],
+                return_exceptions=False,
+            )
+
+            # Flatten the list of lists
+            for comments_list in pr_comment_lists:
+                if comments_list:
+                    all_comments.extend(comments_list)
 
             # Sort by creation time (oldest first)
             all_comments.sort(key=lambda c: c.created_at)
@@ -982,7 +993,7 @@ class GitHubWatcher:
 
                 # Use thread_id as the unique identifier for deduplication
                 # Hash the thread_id to get a numeric value for the database
-                thread_id_hash = int(hashlib.md5(comment.thread_id.encode()).hexdigest()[:8], 16)
+                thread_id_hash = int(hashlib.md5(comment.thread_id.encode()).hexdigest()[:16], 16)
 
                 has_responded = await self.issue_response_manager.has_responded(
                     self.repo_name, thread_id_hash, "pr_review_comment"
