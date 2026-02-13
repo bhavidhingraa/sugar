@@ -75,6 +75,76 @@ class GitHubComment:
 
 
 @dataclass
+class GitHubReviewComment:
+    """GitHub PR review comment"""
+
+    id: str  # GraphQL ID is a string (e.g., "PRRC_kwDOPnDFGc6lz2iF")
+    thread_id: str
+    pr_number: int
+    body: str
+    path: str
+    line: int
+    commit_id: str
+    user: GitHubUser
+    created_at: str
+    state: str  # "resolved", "outdated", "active"
+    diff_hunk: str = ""
+    start_line: Optional[int] = None
+    original_commit_id: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GitHubReviewComment":
+        return cls(
+            id=str(data.get("id", "")),
+            thread_id=data.get("thread_id", ""),
+            pr_number=data.get("pr_number", 0),
+            body=data.get("body", ""),
+            path=data.get("path", ""),
+            line=data.get("line", 0),
+            commit_id=data.get("commit_id", ""),
+            user=GitHubUser.from_dict(data.get("user", {})),
+            created_at=data.get("created_at", ""),
+            state=data.get("state", "active"),
+            diff_hunk=data.get("diff_hunk", ""),
+            start_line=data.get("start_line"),
+            original_commit_id=data.get("original_commit_id"),
+        )
+
+
+@dataclass
+class GitHubPullRequest:
+    """GitHub Pull Request"""
+
+    number: int
+    title: str
+    body: str
+    state: str
+    user: GitHubUser
+    head_ref: str
+    base_ref: str
+    html_url: str
+    created_at: str
+    updated_at: str
+    labels: List[GitHubLabel] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GitHubPullRequest":
+        return cls(
+            number=data.get("number", 0),
+            title=data.get("title", ""),
+            body=data.get("body", ""),
+            state=data.get("state", "open"),
+            user=GitHubUser.from_dict(data.get("user", {})),
+            head_ref=data.get("head_ref", data.get("headRefName", "")),
+            base_ref=data.get("base_ref", data.get("baseRefName", "")),
+            html_url=data.get("html_url", data.get("url", "")),
+            created_at=data.get("created_at", data.get("createdAt", "")),
+            updated_at=data.get("updated_at", data.get("updatedAt", "")),
+            labels=[GitHubLabel.from_dict(l) for l in data.get("labels", [])],
+        )
+
+
+@dataclass
 class GitHubIssue:
     """GitHub issue"""
 
@@ -186,15 +256,72 @@ class GitHubClient:
         method: str = "GET",
         data: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        """Make a GitHub API request via gh"""
-        args = ["api", endpoint, "-X", method]
+        """Make a GitHub API request via gh (without -R flag)"""
+        cmd = ["gh", "api", endpoint, "-X", method]
 
         if data:
-            args.extend(["-f", json.dumps(data)])
+            cmd.extend(["-f", json.dumps(data)])
 
-        result = self._run_gh(args)
-        if result.stdout:
+        env = os.environ.copy()
+        if self.token:
+            env["GH_TOKEN"] = self.token
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+
+        if result.returncode == 0 and result.stdout:
             return json.loads(result.stdout)
+        return None
+
+    def _gh_graphql(
+        self,
+        query: str,
+        variables: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Make a GraphQL API request via gh CLI"""
+        # Build command: -f for query (string), -F for typed variables
+        cmd = ["gh", "api", "graphql", "-f", f"query={query}"]
+
+        # Add variables with -F flag for typed literals (Integer, Boolean, etc.)
+        if variables:
+            for key, value in variables.items():
+                if value is not None:  # Skip None values
+                    cmd.extend(["-F", f"{key}={value}"])
+
+        env = os.environ.copy()
+        if self.token:
+            env["GH_TOKEN"] = self.token
+
+        logger.debug(f"Running GraphQL with {len(variables) if variables else 0} variables")
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+
+        if result.returncode != 0:
+            logger.error(f"GraphQL command failed: {result.stderr}")
+            return None
+
+        if result.stdout:
+            try:
+                parsed = json.loads(result.stdout)
+                # Log any errors in the GraphQL response
+                if "errors" in parsed:
+                    logger.debug(f"GraphQL response contains errors: {parsed['errors']}")
+                return parsed
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse GraphQL response: {e}")
+                logger.debug(f"Raw response: {result.stdout[:500]}")
+                return None
         return None
 
     def get_issue(self, issue_number: int) -> GitHubIssue:
@@ -421,3 +548,293 @@ class GitHubClient:
     def is_bot_author(self, issue: GitHubIssue) -> bool:
         """Check if the issue was created by a bot"""
         return issue.user.type == "Bot" or issue.user.login.endswith("[bot]")
+
+    def list_open_prs(
+        self,
+        state: str = "open",
+        limit: int = 50,
+    ) -> List[GitHubPullRequest]:
+        """List open pull requests"""
+        args = [
+            "pr",
+            "list",
+            "--state",
+            state,
+            "--limit",
+            str(limit),
+            "--json",
+            "number,title,body,state,headRefName,baseRefName,createdAt,updatedAt,url,author,labels",
+        ]
+
+        result = self._run_gh(args)
+        prs_data = json.loads(result.stdout)
+
+        prs = []
+        for data in prs_data:
+            pr_data = {
+                "number": data.get("number"),
+                "title": data.get("title"),
+                "body": data.get("body"),
+                "state": data.get("state"),
+                "user": {"login": data.get("author", {}).get("login", "unknown")},
+                "headRefName": data.get("headRefName"),
+                "baseRefName": data.get("baseRefName"),
+                "url": data.get("url"),
+                "createdAt": data.get("createdAt"),
+                "updatedAt": data.get("updatedAt"),
+                "labels": data.get("labels", []),
+            }
+            prs.append(GitHubPullRequest.from_dict(pr_data))
+
+        return prs
+
+    def get_pr_review_comments(
+        self,
+        pr_number: int,
+    ) -> List[GitHubReviewComment]:
+        """Get all unresolved review comments for a PR using GraphQL"""
+        if not self.repo:
+            logger.warning("No repo configured for GraphQL queries")
+            return []
+
+        owner, repo_name = self.repo.split("/") if "/" in self.repo else ("", "")
+        logger.debug(f"Querying PR #{pr_number} for repo: {self.repo} (owner={owner}, repo={repo_name})")
+
+        query = """
+        query($owner: String!, $repo: String!, $pr_number: Int!, $after: String) {
+            repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr_number) {
+                    reviewThreads(first: 50, after: $after) {
+                        pageInfo {
+                            hasNextPage
+                            endCursor
+                        }
+                        nodes {
+                            id
+                            isResolved
+                            comments(first: 100) {
+                                nodes {
+                                    id
+                                    body
+                                    author { login }
+                                    createdAt
+                                    originalCommit { oid }
+                                    path
+                                    line
+                                    startLine
+                                    diffHunk
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """
+
+        all_comments = []
+        has_next_page = True
+        after_cursor = None
+
+        while has_next_page:
+            # Only include 'after' if we have a cursor
+            variables = {
+                "owner": owner,
+                "repo": repo_name,
+                "pr_number": pr_number,
+            }
+            if after_cursor:
+                variables["after"] = after_cursor
+
+            result = self._gh_graphql(query, variables)
+
+            if not result:
+                logger.error(f"GraphQL query returned no result for PR #{pr_number}")
+                break
+
+            # Check for errors in response
+            if "errors" in result:
+                errors = result.get("errors", [])
+                error_msgs = [e.get("message", str(e)) for e in errors]
+                logger.error(f"GraphQL errors for PR #{pr_number}: {error_msgs}")
+                break
+
+            if "data" not in result:
+                logger.error(f"GraphQL response missing 'data' for PR #{pr_number}: {result}")
+                break
+
+            # Check if data is None or repository is missing
+            data = result.get("data")
+            if not data:
+                logger.error(f"GraphQL response has null 'data' for PR #{pr_number}")
+                break
+
+            if "repository" not in data:
+                logger.error(f"GraphQL response missing 'repository' for PR #{pr_number}. Data keys: {list(data.keys())}")
+                break
+
+            if data.get("repository") is None:
+                logger.error(f"GraphQL response has null 'repository' for PR #{pr_number}")
+                break
+
+            try:
+                pr_data = data["repository"].get("pullRequest")
+                if not pr_data:
+                    logger.error(f"GraphQL response has null 'pullRequest' for PR #{pr_number}")
+                    break
+
+                threads_data = pr_data.get("reviewThreads")
+                if not threads_data:
+                    logger.error(f"GraphQL response missing 'reviewThreads' for PR #{pr_number}")
+                    break
+
+                threads = threads_data.get("nodes", [])
+                page_info = threads_data.get("pageInfo", {})
+
+                for thread in threads:
+                    if not thread.get("isResolved", True):  # Only unresolved threads
+                        comments = thread.get("comments", {}).get("nodes", [])
+                        if comments:
+                            # Get the original (first) comment in the thread
+                            original_comment = comments[0]
+                            author_login = original_comment["author"]["login"]
+                            # Determine if bot by checking login suffix
+                            author_type = "Bot" if author_login.endswith("[bot]") else "User"
+
+                            comment = GitHubReviewComment(
+                                id=original_comment["id"],
+                                thread_id=thread["id"],
+                                pr_number=pr_number,
+                                body=original_comment.get("body", ""),
+                                path=original_comment.get("path", ""),
+                                line=original_comment.get("line", 0),
+                                commit_id=original_comment.get("originalCommit", {}).get("oid", ""),
+                                user=GitHubUser(
+                                    login=author_login,
+                                    type=author_type,
+                                ),
+                                created_at=original_comment["createdAt"],
+                                state="active",
+                                diff_hunk=original_comment.get("diffHunk", ""),
+                                start_line=original_comment.get("startLine"),
+                            )
+                            all_comments.append(comment)
+
+                has_next_page = page_info.get("hasNextPage", False)
+                if has_next_page:
+                    after_cursor = page_info.get("endCursor")
+
+            except (KeyError, IndexError) as e:
+                logger.error(f"Error parsing GraphQL response for PR #{pr_number}: {e}")
+                break
+
+        return all_comments
+
+    def get_all_unresolved_comments(
+        self,
+    ) -> List[GitHubReviewComment]:
+        """Get all unresolved review comments across all open PRs, sorted by creation time"""
+        all_comments = []
+
+        for pr in self.list_open_prs():
+            comments = self.get_pr_review_comments(pr.number)
+            all_comments.extend(comments)
+
+        # Sort by created_at to get oldest first
+        all_comments.sort(key=lambda c: c.created_at)
+
+        return all_comments
+
+    def reply_to_review_thread(
+        self,
+        pr_number: int,
+        thread_id: str,
+        body: str,
+    ) -> bool:
+        """Reply to a review comment thread using GraphQL"""
+        mutation = """
+        mutation($body: String!, $thread_id: ID!) {
+            addPullRequestReviewThreadReply(input: {
+                body: $body
+                pullRequestReviewThreadId: $thread_id
+            }) {
+                comment {
+                    id
+                    body
+                }
+            }
+        }
+        """
+
+        variables = {
+            "body": body,
+            "thread_id": thread_id,
+        }
+
+        result = self._gh_graphql(mutation, variables)
+
+        if result and "data" in result:
+            logger.info(f"Replied to review thread on PR #{pr_number}")
+            return True
+        else:
+            logger.error(f"Failed to reply to review thread on PR #{pr_number}")
+            if result and "errors" in result:
+                logger.error(f"GraphQL errors: {result['errors']}")
+            return False
+
+    def resolve_conversation_graphql(
+        self,
+        thread_id: str,
+    ) -> bool:
+        """Resolve a review conversation using GraphQL mutation"""
+        # The threadId is a global ID that already encodes the repository
+        # We don't need repositoryId in the mutation
+        mutation = """
+        mutation($thread_id: ID!) {
+            resolveReviewThread(input: {
+                threadId: $thread_id
+            }) {
+                thread {
+                    isResolved
+                }
+            }
+        }
+        """
+
+        variables = {
+            "thread_id": thread_id,
+        }
+
+        result = self._gh_graphql(mutation, variables)
+
+        if result and "data" in result:
+            logger.info(f"Resolved review conversation: {thread_id}")
+            return True
+        else:
+            logger.error(f"Failed to resolve review conversation: {thread_id}")
+            if result and "errors" in result:
+                logger.error(f"GraphQL errors: {result['errors']}")
+            return False
+
+    def add_pr_comment(
+        self,
+        pr_number: int,
+        body: str,
+    ) -> bool:
+        """Add a comment to a PR (for triggering review with /gemini review)"""
+        result = self._run_gh(
+            [
+                "pr",
+                "comment",
+                str(pr_number),
+                "--body",
+                body,
+            ]
+        )
+
+        if result.returncode == 0:
+            logger.info(f"Added comment to PR #{pr_number}")
+            return True
+        else:
+            logger.error(f"Failed to add comment to PR #{pr_number}: {result.stderr}")
+            return False

@@ -111,6 +111,26 @@ class WorkflowOrchestrator:
             "commit_message_template": self._get_commit_template(work_type),
         }
 
+        # Handle PR review comments specially - use existing PR branch
+        if work_type == "pr_review_comment":
+            context = work_item.get("context", {})
+            workflow = {
+                "git_workflow": WorkflowType.DIRECT_COMMIT,
+                "commit_style": "conventional",
+                "auto_commit": True,
+                "create_github_issue": False,
+                "update_github_issue": False,
+                "branch_name": context.get("branch"),  # Use existing PR branch
+                "checkout_existing_branch": True,  # Flag to checkout existing branch
+                "commit_message_template": "fix: address review comment on {file_path}:{line}",
+                "push_after_commit": True,
+                "resolve_conversation": True,
+            }
+            logger.debug(
+                f"🔄 Determined workflow for pr_review_comment: checkout existing branch {workflow['branch_name']}"
+            )
+            return workflow
+
         # Handle GitHub-sourced work differently
         if source == "github_watcher":
             workflow["update_github_issue"] = True
@@ -144,6 +164,7 @@ class WorkflowOrchestrator:
             "documentation": "docs: {title}",
             "code_quality": "refactor: {title}",
             "test_coverage": "test: {title}",
+            "pr_review_comment": "fix: address review comment - {title}",
         }
 
         return templates.get(work_type, "chore: {title}")
@@ -156,9 +177,18 @@ class WorkflowOrchestrator:
         title = work_item.get("title", "Unknown work")
         work_id = work_item.get("id", "unknown")
 
+        # Get context for PR review comments
+        context = work_item.get("context", {})
+
         if workflow["commit_style"] == "conventional":
-            # Use the template as-is (already conventional format)
-            message = template.format(title=title)
+            # For PR review comments, include file_path and line from context
+            if work_item.get("type") == "pr_review_comment":
+                file_path = context.get("file_path", "unknown")
+                line = context.get("line", 0)
+                message = template.format(title=title, file_path=file_path, line=line)
+            else:
+                # Use the template as-is (already conventional format)
+                message = template.format(title=title)
         else:
             # Simple format
             message = title
@@ -179,6 +209,26 @@ class WorkflowOrchestrator:
 
         # Check dry_run mode
         dry_run = self.config.get("sugar", {}).get("dry_run", False)
+
+        # Handle PR review comments - checkout existing PR branch
+        if workflow.get("checkout_existing_branch") and workflow.get("branch_name") and self.git_ops:
+            branch_name = workflow["branch_name"]
+            if not dry_run:
+                try:
+                    success = await self.git_ops.checkout_existing_branch(branch_name)
+                    if success:
+                        logger.info(f"🌿 Checked out existing PR branch: {branch_name}")
+                    else:
+                        logger.warning(
+                            f"⚠️ Failed to checkout branch {branch_name}, using current branch"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"⚠️ Branch checkout failed: {e}"
+                    )
+            else:
+                logger.info(f"🧪 DRY RUN: Would checkout existing branch: {branch_name}")
+            return workflow
 
         # Create branch if using PR workflow (skip in dry_run)
         if not dry_run and workflow["git_workflow"] == WorkflowType.PULL_REQUEST and self.git_ops:
@@ -246,6 +296,58 @@ class WorkflowOrchestrator:
             has_changes = await self.git_ops.has_uncommitted_changes()
             if not has_changes:
                 logger.info("📝 No changes to commit")
+
+                # For PR review comments, still reply to the thread explaining why
+                if workflow.get("resolve_conversation") and self.github_watcher:
+                    context = work_item.get("context", {})
+                    pr_number = context.get("pr_number")
+                    thread_id = context.get("thread_id")
+                    thread_id_full = context.get("github_pr_comment", {}).get("thread_id")
+
+                    if pr_number and thread_id and thread_id_full:
+                        # Get the summary or reason from execution result
+                        summary = execution_result.get("summary", "")
+                        result = execution_result.get("result", "")
+
+                        # Build a reply explaining why no changes were made
+                        if summary or result:
+                            reply_body = f"""I've reviewed this comment but no changes were needed.
+
+**Analysis:**
+{summary[:1000] if summary else result[:1000]}
+
+**Reason:** The code appears to already meet the requirements or the issue may be addressed differently."""
+                        else:
+                            reply_body = """I've reviewed this comment but no changes were made.
+
+**Reason:** Unable to make changes - this could be because:
+- The code already meets the requirements
+- The issue requires more context or clarification
+- Changes would be outside the scope of this task
+
+Please provide more details if you'd like me to revisit this."""
+
+                        await self.github_watcher.reply_to_review_thread(
+                            pr_number, thread_id_full, reply_body
+                        )
+                        logger.info(f"Replied to review thread for PR #{pr_number} (no changes made)")
+
+                        # Resolve the conversation even though no changes were made
+                        await self.github_watcher.resolve_conversation_graphql(thread_id_full)
+                        logger.info(f"Resolved review conversation for PR #{pr_number} (no changes)")
+
+                        # Record the response even though no changes were made
+                        await self.github_watcher.issue_response_manager.initialize()
+                        await self.github_watcher.issue_response_manager.record_response(
+                            repo=context.get("repo"),
+                            issue_number=thread_id,
+                            response_type="pr_review_comment",
+                            confidence=1.0,
+                            response_content=reply_body,
+                            was_auto_posted=True,
+                            work_item_id=work_item.get("id"),
+                        )
+
                 return True
 
             # Run quality gate validation before committing
@@ -329,6 +431,65 @@ class WorkflowOrchestrator:
                         await self._create_pull_request_if_enabled(
                             work_item, workflow, branch_name
                         )
+                    else:
+                        logger.error(f"❌ Failed to push branch {branch_name}")
+                        return False
+
+            # Handle PR review comment workflow - push and respond to review
+            if workflow.get("resolve_conversation") and self.github_watcher:
+                branch_name = workflow.get("branch_name")
+                if branch_name:
+                    # Push branch
+                    push_success = await self.git_ops.push_branch(branch_name)
+                    if push_success:
+                        logger.info(f"📤 Pushed branch {branch_name} for PR review comment")
+
+                        # Get context from work item
+                        context = work_item.get("context", {})
+                        pr_number = context.get("pr_number")
+                        thread_id = context.get("thread_id")
+                        thread_id_full = context.get("github_pr_comment", {}).get("thread_id")
+
+                        # Handle GitHub interactions
+                        if pr_number and thread_id:
+                            # Step 1: Reply to review thread with summary of changes
+                            summary = execution_result.get("summary", "Changes have been made to address the review comment.")
+                            reply_body = f"""I've addressed this review comment and pushed the changes.
+
+**Changes made:**
+{summary[:1000]}
+
+Please review the updated commit."""
+                            await self.github_watcher.reply_to_review_thread(
+                                pr_number, thread_id_full, reply_body
+                            )
+
+                            # Step 2: Resolve the conversation
+                            await self.github_watcher.resolve_conversation_graphql(thread_id_full)
+                            logger.info(f"Resolved review conversation for PR #{pr_number}")
+
+                            # Step 3: Trigger re-review with configured command
+                            review_config = (
+                                self.config.get("sugar", {})
+                                .get("discovery", {})
+                                .get("github", {})
+                                .get("review_comments", {})
+                            )
+                            re_review_command = review_config.get("re_review_command", "/gemini review")
+                            await self.github_watcher.add_pr_comment(pr_number, re_review_command)
+                            logger.info(f"Triggered re-review for PR #{pr_number}")
+
+                            # Record the response
+                            await self.github_watcher.issue_response_manager.initialize()
+                            await self.github_watcher.issue_response_manager.record_response(
+                                repo=context.get("repo"),
+                                issue_number=thread_id,  # Using thread_id as unique identifier
+                                response_type="pr_review_comment",
+                                confidence=1.0,
+                                response_content=reply_body,
+                                was_auto_posted=True,
+                                work_item_id=work_item.get("id"),
+                            )
                     else:
                         logger.error(f"❌ Failed to push branch {branch_name}")
                         return False

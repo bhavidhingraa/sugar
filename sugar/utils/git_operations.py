@@ -65,6 +65,40 @@ class GitOperations:
             logger.error(f"Error creating branch {branch_name}: {e}")
             return False
 
+    async def checkout_existing_branch(self, branch_name: str) -> bool:
+        """Checkout an existing branch (for PR branches) without creating a new one"""
+        try:
+            # Fetch all remotes first
+            await self._run_git_command(["fetch", "origin"])
+
+            # Check if branch exists locally
+            local_result = await self._run_git_command(["branch", "--list", branch_name])
+
+            if branch_name in local_result["stdout"]:
+                # Checkout local branch
+                result = await self._run_git_command(["checkout", branch_name])
+                if result["returncode"] == 0:
+                    # Pull latest changes
+                    await self._run_git_command(["pull", "origin", branch_name])
+                    logger.info(f"Checked out existing branch: {branch_name}")
+                    return True
+                else:
+                    logger.error(f"Failed to checkout local branch {branch_name}: {result['stderr']}")
+                    return False
+            else:
+                # Checkout remote branch
+                result = await self._run_git_command(["checkout", "-b", branch_name, f"origin/{branch_name}"])
+                if result["returncode"] == 0:
+                    logger.info(f"Checked out remote branch: {branch_name}")
+                    return True
+                else:
+                    logger.error(f"Failed to checkout remote branch {branch_name}: {result['stderr']}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error checking out branch {branch_name}: {e}")
+            return False
+
     async def commit_changes(self, commit_message: str, add_all: bool = True) -> bool:
         """Stage and commit changes"""
         try:
