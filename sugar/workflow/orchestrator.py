@@ -30,6 +30,14 @@ class WorkflowOrchestrator:
         self.github_watcher = github_watcher
         self.workflow_config = self._load_workflow_config()
 
+        # Initialize quality gates coordinator if enabled
+        self.quality_gates = None
+        if config.get("quality_gates", {}).get("enabled", False):
+            from ..quality_gates import QualityGatesCoordinator
+
+            self.quality_gates = QualityGatesCoordinator(config)
+            logger.info("🔒 Quality Gates enabled for workflow validation")
+
     def _get_nested_config(self, *keys, default=None):
         """Helper to safely access nested config values.
 
@@ -49,15 +57,6 @@ class WorkflowOrchestrator:
             if value is None:
                 return default
         return value if value is not None else default
-
-        # Initialize quality gates coordinator if enabled
-        self.quality_gates = None
-        if config.get("quality_gates", {}).get("enabled", False):
-            from ..quality_gates import QualityGatesCoordinator
-
-            self.quality_gates = QualityGatesCoordinator(config)
-            logger.info("🔒 Quality Gates enabled for workflow validation")
-
     def _load_workflow_config(self) -> Dict[str, Any]:
         """Load and validate workflow configuration"""
         workflow_config = self.config.get("sugar", {}).get("workflow", {})
